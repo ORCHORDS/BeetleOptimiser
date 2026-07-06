@@ -43,6 +43,7 @@
       "main.js",
       "src/preload.js",
       "scripts/**/*",
+      "models/**/*",
       "dist/index.html",
       "dist/assets/**/*",
       "build/icon.ico",
@@ -50,7 +51,10 @@
       "!dist/win-unpacked/**"
     ],
     "asarUnpack": [
-      "scripts/**/*"
+      "scripts/**/*",
+      "models/**/*",
+      "node_modules/node-llama-cpp/**/*",
+      "node_modules/@node-llama-cpp/**/*"
     ]
   },
   "allowScripts": {

@@ -29,13 +29,22 @@ const QUICK_PROMPTS = [
   'How do Windows updates work?',
 ];
 
-// Interim reply engine: client-side keyword search over the 51 built-in
-// articles (content/rag-articles.js), no model needed. This is written as
-// a standalone async function specifically so it's a one-line swap later -
-// once llm-training's fine-tuned model is shipped via node-llama-cpp, this
-// becomes `await window.beetleAPI.chat.ask(question)` instead, and nothing
-// else in this component needs to change.
+// Reply engine: tries the real fine-tuned local model first (main.js's
+// chat:ask handler, via node-llama-cpp) and falls back to client-side
+// keyword search over the 51 built-in articles (content/rag-articles.js)
+// if the model isn't shipped yet or fails to load - main.js's handler
+// resolves { ok: false } rather than rejecting for exactly that case, so
+// this never needs to distinguish "not ready" from a real error to know
+// what to do next.
 async function getAssistantReply(question) {
+  if (window.beetleAPI?.chat?.ask) {
+    try {
+      const result = await window.beetleAPI.chat.ask(question);
+      if (result.ok) return result.answer;
+    } catch (_) {
+      // fall through to the search-based fallback below
+    }
+  }
   const [best] = searchArticles(question, { limit: 1 });
   if (best) return best.body;
   return "I don't have information about that in my Windows troubleshooting knowledge base yet. Try rephrasing your question, or ask our human experts below.";

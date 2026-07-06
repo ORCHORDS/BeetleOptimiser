@@ -447,6 +447,77 @@ ipcMain.handle('system:open-external', async (_, url) => {
 });
 
 // ----------------------------------------------------------------------
+// CHAT: local LLM inference via node-llama-cpp, for the "Ask a Question"
+// tab (see llm-training/ for how the model is built - fine-tuned on
+// Windows troubleshooting Q&A, quantized to GGUF). node-llama-cpp is
+// ESM-only, so it's loaded via dynamic import() rather than require()
+// even though this file is CommonJS.
+//
+// The model ships at models/beetle.Q4_K_M.gguf (copied in from
+// llm-training/models/ once training+quantization is done - that folder
+// itself never ships, it's a dev-time staging area). Same asar-unpacking
+// concern as scripts/: node-llama-cpp's native binary can't read a file
+// packed inside app.asar, so this path needs the same
+// app.asar -> app.asar.unpacked swap, and models/ needs to be added to
+// package.json's asarUnpack list alongside scripts/.
+//
+// If the model file isn't there yet (still training) or fails to load,
+// this returns { ok: false } rather than throwing - the renderer already
+// has its own client-side keyword-search fallback (src/lib/ragSearch.js)
+// for exactly this case, so a missing/broken model degrades gracefully
+// instead of breaking the tab.
+const CHAT_MODEL_PATH = path.join(__dirname, 'models', 'beetle.Q4_K_M.gguf')
+  .replace('app.asar', 'app.asar.unpacked');
+
+const CHAT_SYSTEM_PROMPT = (
+  'You are Beetle, the built-in Windows PC troubleshooting assistant inside Beetle Optimiser. '
+  + 'You help with performance, startup, memory, disk space, registry, drivers, Windows updates, '
+  + 'and common Windows errors. If a question is outside this scope, say so politely instead of '
+  + 'guessing, and suggest what you can actually help with.'
+);
+
+let chatSessionPromise = null;
+
+function getChatSession() {
+  if (!fs.existsSync(CHAT_MODEL_PATH)) return null;
+  if (!chatSessionPromise) {
+    chatSessionPromise = (async () => {
+      const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
+      const llama = await getLlama();
+      const model = await llama.loadModel({ modelPath: CHAT_MODEL_PATH });
+      const context = await model.createContext();
+      return new LlamaChatSession({
+        contextSequence: context.getSequence(),
+        systemPrompt: CHAT_SYSTEM_PROMPT,
+      });
+    })().catch((err) => {
+      chatSessionPromise = null; // let the next call retry instead of caching a failure forever
+      throw err;
+    });
+  }
+  return chatSessionPromise;
+}
+
+ipcMain.handle('chat:ask', async (_, question) => {
+  if (typeof question !== 'string' || !question.trim()) {
+    throw new Error('chat:ask: question is required');
+  }
+  let session;
+  try {
+    session = await getChatSession();
+  } catch (err) {
+    return { ok: false, reason: 'load-error', message: String(err) };
+  }
+  if (!session) return { ok: false, reason: 'model-not-ready' };
+  try {
+    const answer = await session.prompt(question);
+    return { ok: true, answer };
+  } catch (err) {
+    return { ok: false, reason: 'inference-error', message: String(err) };
+  }
+});
+
+// ----------------------------------------------------------------------
 // OAuth sign-in via an external-browser + custom-protocol handoff.
 //
 // Google permanently blocks OAuth from ANY embedded webview (including an

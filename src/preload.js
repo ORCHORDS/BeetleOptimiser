@@ -58,6 +58,14 @@ contextBridge.exposeInMainWorld('beetleAPI', {
       ipcRenderer.invoke('system:shell', { command, args }),
   },
 
+  // CHAT: local LLM inference for the Ask a Question tab. Resolves
+  // { ok: false, reason: 'model-not-ready' } (not a rejection) while the
+  // fine-tuned model hasn't been shipped yet - callers should fall back to
+  // the client-side RAG search in that case, not treat it as an error.
+  chat: {
+    ask: (question) => ipcRenderer.invoke('chat:ask', question),
+  },
+
   // FLYOUT: only meaningful from inside the tray flyout's own small
   // BrowserWindow (see main.js's createFlyoutWindow + FlyoutApp.jsx).
   // hover() lets main.js know the cursor is over the popup's own content,
