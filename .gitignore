@@ -1,0 +1,34 @@
+# Node
+node_modules/
+dist/
+build/output/
+.npm/
+.yarn/
+
+# Electron
+out/
+*.log
+
+# Python (training pipeline)
+**/__pycache__/
+**/*.pyc
+.venv/
+
+# LLM training (data + model artifacts never get committed)
+llm-training/data/raw/
+llm-training/data/processed/
+llm-training/data/qa/
+llm-training/data/train/
+llm-training/data/rag/
+llm-training/models/
+llm-training/checkpoints/
+llm-training/.env
+llm-training/logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
