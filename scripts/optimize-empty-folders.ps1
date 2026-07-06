@@ -40,7 +40,7 @@ $roots = @(
 # placeholder dirs that are empty only because a pipeline step hasn't
 # populated them yet. Pruning these names from the walk entirely (not just
 # filtering results afterward) keeps this feature scoped to personal files.
-$excludedNames = @('.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', 'target', '.cache')
+$excludedNames = @('.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', 'target', '.cache', 'bin', 'obj')
 
 function Get-SubdirsPruned($path) {
   Get-ChildItem -LiteralPath $path -Force -Directory -ErrorAction SilentlyContinue |

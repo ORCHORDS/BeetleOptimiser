@@ -126,6 +126,21 @@ export default function App() {
   const [registryResult, setRegistryResult] = useState(null);
   const [registryConfirmOpen, setRegistryConfirmOpen] = useState(false);
 
+  // Driver check: read-only list (problem devices first, then every signed
+  // driver's version/date) - actually installing an update needs the
+  // vendor's own package, out of scope for a safe scripted action.
+  const [driversBusy, setDriversBusy] = useState(false);
+  const [driversOpen, setDriversOpen] = useState(false);
+  const [drivers, setDrivers] = useState([]);
+  const [driversResult, setDriversResult] = useState(null);
+
+  // Duplicates Finder: scan (size then SHA-256 grouping) -> per-file delete
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  const [duplicateRows, setDuplicateRows] = useState([]);
+  const [duplicateBusyId, setDuplicateBusyId] = useState(null);
+  const [duplicateToDelete, setDuplicateToDelete] = useState(null);
+  const [duplicatesResult, setDuplicatesResult] = useState(null);
+
   // -------------------------------------------------------------------
   // Handlers
   // -------------------------------------------------------------------
@@ -322,6 +337,78 @@ export default function App() {
     }
   }
 
+  async function handleDriverClick() {
+    if (!window.beetleAPI) { setDriversResult('Not available outside the packaged app.'); return; }
+    setDriversResult(null);
+    setDriversBusy(true);
+    try {
+      const { items } = await window.beetleAPI.optimizer.listDrivers();
+      const problems = items.filter((i) => i.event === 'problem').map((i) => ({
+        id: `problem:${i.item.device_id}`,
+        primary: `⚠ ${i.item.name}`,
+        secondary: `Device Manager error code ${i.item.error_code} · ${i.item.manufacturer || 'Unknown manufacturer'}`,
+      }));
+      const driverList = items.filter((i) => i.event === 'driver').map((i) => ({
+        id: `driver:${i.item.name}:${i.item.version}`,
+        primary: i.item.name,
+        secondary: `${i.item.provider || 'Unknown'} · v${i.item.version || '?'} · ${i.item.date || 'unknown date'}`,
+      }));
+      setDrivers([...problems, ...driverList]);
+      setDriversOpen(true);
+    } catch (e) {
+      setDriversResult(`Driver check failed: ${e.message || e}`);
+    } finally {
+      setDriversBusy(false);
+    }
+  }
+
+  async function handleDuplicatesClick() {
+    if (!window.beetleAPI) { setDuplicatesResult('Not available outside the packaged app.'); return; }
+    setDuplicatesResult(null);
+    try {
+      const { items } = await window.beetleAPI.optimizer.scanDuplicates();
+      const rows = [];
+      items.filter((i) => i.event === 'group').forEach((g) => {
+        g.files.forEach((f) => {
+          const otherCount = g.files.length - 1;
+          rows.push({
+            id: f.path,
+            primary: f.path.split('\\').pop(),
+            secondary: `${f.path} · duplicate of ${otherCount} other file${otherCount === 1 ? '' : 's'}`,
+            actionLabelOverride: 'Delete',
+          });
+        });
+      });
+      if (rows.length === 0) {
+        setDuplicatesResult('No duplicate files found.');
+        return;
+      }
+      setDuplicateRows(rows);
+      setDuplicatesOpen(true);
+    } catch (e) {
+      setDuplicatesResult(`Scan failed: ${e.message || e}`);
+    }
+  }
+
+  function handleRequestDeleteDuplicate(row) {
+    setDuplicateToDelete(row);
+  }
+
+  async function handleConfirmDeleteDuplicate() {
+    const row = duplicateToDelete;
+    setDuplicateBusyId(row.id);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('delete-duplicates');
+      await window.beetleAPI.optimizer.deleteDuplicates([row.id], token);
+      setDuplicateRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (e) {
+      setDuplicatesResult(`Delete failed: ${e.message || e}`);
+    } finally {
+      setDuplicateBusyId(null);
+      setDuplicateToDelete(null);
+    }
+  }
+
   async function handleConfirmRegistryRepair() {
     setRegistryBusy(true);
     try {
@@ -346,8 +433,8 @@ export default function App() {
       case 'uninstall': return handleAppsClick();
       case 'startup':   return handleStartupClick();
       case 'browser':   return handleScanClick();
-      case 'driver':    return handleRegistryClick();
-      case 'duplicate': return handleScanClick();
+      case 'driver':    return handleDriverClick();
+      case 'duplicate': return handleDuplicatesClick();
       case 'add':       return setAddToolOpen(true); // not wired
       default:         return;
     }
@@ -442,7 +529,7 @@ export default function App() {
             return null;
           }} />
         ) : activeTab === 'Ask a Question' ? (
-          <AskQuestionView c={c} isLight={isLight} />
+          <AskQuestionView c={c} isLight={isLight} auth={auth} />
         ) : (
           <UnknownTabFallback c={c} tab={activeTab} />
         )}
@@ -552,6 +639,56 @@ export default function App() {
           background: c.bgSecondary, padding: '6px 10px',
           border: `1px solid ${c.border}`, borderRadius: 6,
         }}>{startupResult}</div>
+      )}
+
+      <ItemListModal
+        c={c}
+        open={driversOpen}
+        title="Driver Check"
+        emptyText="No driver information available."
+        items={drivers}
+        actionLabel="—"
+        onAction={() => {}}
+        onClose={() => setDriversOpen(false)}
+      />
+      {driversResult && (
+        <div style={{
+          position: 'fixed', bottom: 60, left: 220, zIndex: 30,
+          fontSize: 11, color: c.textSecondary,
+          background: c.bgSecondary, padding: '6px 10px',
+          border: `1px solid ${c.border}`, borderRadius: 6,
+        }}>{driversResult}</div>
+      )}
+
+      <ItemListModal
+        c={c}
+        open={duplicatesOpen}
+        title="Duplicates Finder"
+        emptyText="No duplicate files found."
+        items={duplicateRows}
+        actionLabel="Delete"
+        busyId={duplicateBusyId}
+        onAction={handleRequestDeleteDuplicate}
+        onClose={() => setDuplicatesOpen(false)}
+      />
+      <ConfirmModal
+        c={c}
+        open={!!duplicateToDelete}
+        busy={!!duplicateBusyId}
+        title="Delete this duplicate file?"
+        message="This permanently deletes the file. The other copy (copies) in its duplicate set are left untouched."
+        details={duplicateToDelete ? duplicateToDelete.primary : null}
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDeleteDuplicate}
+        onCancel={() => setDuplicateToDelete(null)}
+      />
+      {duplicatesResult && (
+        <div style={{
+          position: 'fixed', bottom: 60, left: 220, zIndex: 30,
+          fontSize: 11, color: c.textSecondary,
+          background: c.bgSecondary, padding: '6px 10px',
+          border: `1px solid ${c.border}`, borderRadius: 6,
+        }}>{duplicatesResult}</div>
       )}
 
       <ConfirmModal

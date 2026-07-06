@@ -131,7 +131,7 @@ function FooterLink({ c, label, onClick }) {
   );
 }
 
-export default function AskQuestionView({ c, isLight }) {
+export default function AskQuestionView({ c, isLight, auth }) {
   const [activeCategory, setActiveCategory] = useState(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null); // null = nothing searched yet
@@ -199,33 +199,58 @@ export default function AskQuestionView({ c, isLight }) {
       <InfoBanner c={c}>All features related to program technical support</InfoBanner>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* LEFT: guest account panel */}
+        {/* LEFT: account panel - reflects the REAL auth state from the
+            top-left AccountMenu (this tab doesn't own its own sign-in flow,
+            it just reads the same auth object App.jsx already has). */}
         <div style={{ width: 190, flexShrink: 0, borderRight: `1px solid ${c.border}`, padding: 20, textAlign: 'center' }}>
           <div style={{
             width: 70, height: 70, borderRadius: '50%', background: c.bgSecondary,
             display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
+            overflow: 'hidden',
           }}>
-            <UserCircle size={40} color={c.accent} weight="duotone" />
+            {auth?.user?.photoURL
+              ? <img src={auth.user.photoURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <UserCircle size={40} color={c.accent} weight="duotone" />}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 8 }}>Hello, guest!</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}>
-            <span style={{
-              background: c.accent, color: 'white', fontSize: 11, fontWeight: 700,
-              padding: '1px 7px', borderRadius: 10,
-            }}>1</span>
-            <span style={{ fontSize: 11, color: c.textSecondary }}>free question left</span>
-          </div>
-          <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 14 }}>Sign in or sign up via the top-left menu</div>
-          <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
-            display: 'block', width: '100%', background: c.accent, color: 'white',
-            border: 'none', borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
-            fontFamily: 'inherit', marginBottom: 8, opacity: 0.5, cursor: 'not-allowed',
-          }}>Sign In</button>
-          <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
-            display: 'block', width: '100%', background: 'transparent', color: c.textPrimary,
-            border: `1px solid ${c.border}`, borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
-            fontFamily: 'inherit', marginBottom: 12, opacity: 0.5, cursor: 'not-allowed',
-          }}>Sign Up</button>
+          {auth?.user ? (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 2 }}>
+                {auth.user.displayName || auth.user.email || 'Account'}
+              </div>
+              <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 8, wordBreak: 'break-all' }}>
+                {auth.user.email}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
+                <span style={{
+                  background: c.accent, color: 'white', fontSize: 11, fontWeight: 700,
+                  padding: '1px 7px', borderRadius: 10,
+                }}>{auth.tokens === null || auth.tokens === undefined ? '—' : auth.tokens}</span>
+                <span style={{ fontSize: 11, color: c.textSecondary }}>tokens · {auth.plan || 'Free'}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary, marginBottom: 8 }}>Hello, guest!</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}>
+                <span style={{
+                  background: c.accent, color: 'white', fontSize: 11, fontWeight: 700,
+                  padding: '1px 7px', borderRadius: 10,
+                }}>1</span>
+                <span style={{ fontSize: 11, color: c.textSecondary }}>free question left</span>
+              </div>
+              <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 14 }}>Sign in or sign up via the top-left menu</div>
+              <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
+                display: 'block', width: '100%', background: c.accent, color: 'white',
+                border: 'none', borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
+                fontFamily: 'inherit', marginBottom: 8, opacity: 0.5, cursor: 'not-allowed',
+              }}>Sign In</button>
+              <button className="theme-pill-btn" disabled title="Use the Sign in menu in the top-left of the title bar" style={{
+                display: 'block', width: '100%', background: 'transparent', color: c.textPrimary,
+                border: `1px solid ${c.border}`, borderRadius: 6, padding: '9px', fontSize: 12, fontWeight: 600,
+                fontFamily: 'inherit', marginBottom: 12, opacity: 0.5, cursor: 'not-allowed',
+              }}>Sign Up</button>
+            </>
+          )}
           <button
             onClick={() => openModal('service')}
             className="theme-pill-btn"

@@ -130,6 +130,83 @@ export default function ProtectView({ c, isLight, onAction }) {
 
   const fire = (action) => { if (onAction) onAction(action); };
 
+  // --- Browser Protection check: read-only HOSTS/homepage/startup-URL scan ---
+  const [browserCheckBusy, setBrowserCheckBusy] = useState(false);
+  const [browserCheckOpen, setBrowserCheckOpen] = useState(false);
+  const [browserCheckItems, setBrowserCheckItems] = useState([]);
+
+  async function handleBrowserCheck() {
+    if (!window.beetleAPI) { return; }
+    setBrowserCheckBusy(true);
+    try {
+      const { items } = await window.beetleAPI.optimizer.browserCheck();
+      const rows = [];
+      items.filter((i) => i.event === 'hosts_entry').forEach((i, idx) => {
+        rows.push({ id: `hosts-${idx}`, primary: `⚠ HOSTS file redirects "${i.item.domain}"`, secondary: i.item.line });
+      });
+      items.filter((i) => i.event === 'browser').forEach((i) => {
+        const b = i.item;
+        if (!b.installed) {
+          rows.push({ id: b.name, primary: `${b.name}: not installed` });
+        } else if (b.error) {
+          rows.push({ id: b.name, primary: `${b.name}: ${b.error}` });
+        } else {
+          rows.push({
+            id: b.name,
+            primary: b.suspicious ? `⚠ ${b.name}: custom homepage/startup URLs set` : `✓ ${b.name}: no signs of tampering`,
+            secondary: b.homepage ? `Homepage: ${b.homepage}` : (b.startup_urls?.length ? `Startup URLs: ${b.startup_urls.join(', ')}` : 'Default new-tab page'),
+          });
+        }
+      });
+      const defaultBrowser = items.find((i) => i.event === 'default_browser');
+      if (defaultBrowser) {
+        rows.unshift({ id: 'default', primary: `Default browser: ${defaultBrowser.prog_id || 'unknown'}` });
+      }
+      setBrowserCheckItems(rows);
+      setBrowserCheckOpen(true);
+    } catch (e) {
+      setBrowserCheckItems([{ id: 'error', primary: `Check failed: ${e.message || e}` }]);
+      setBrowserCheckOpen(true);
+    } finally {
+      setBrowserCheckBusy(false);
+    }
+  }
+
+  // --- File Shredder: native file picker -> confirm -> overwrite+delete ---
+  const [shredPicked, setShredPicked] = useState([]);
+  const [shredConfirmOpen, setShredConfirmOpen] = useState(false);
+  const [shredBusy, setShredBusy] = useState(false);
+  const [shredResult, setShredResult] = useState(null);
+
+  async function handlePickFilesToShred() {
+    if (!window.beetleAPI) { setShredResult('Not available outside the packaged app.'); return; }
+    setShredResult(null);
+    try {
+      const { canceled, paths } = await window.beetleAPI.optimizer.pickFilesForShred();
+      if (canceled || paths.length === 0) return;
+      setShredPicked(paths);
+      setShredConfirmOpen(true);
+    } catch (e) {
+      setShredResult(`Could not open file picker: ${e.message || e}`);
+    }
+  }
+
+  async function handleConfirmShred() {
+    setShredBusy(true);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('shred-files');
+      const result = await window.beetleAPI.optimizer.shredFiles(shredPicked, token);
+      const finished = result.items.find((i) => i.event === 'finished');
+      setShredResult(`Shredded ${finished?.shredded ?? 0} of ${finished?.count ?? shredPicked.length} file(s).`);
+    } catch (e) {
+      setShredResult(`Shred failed: ${e.message || e}`);
+    } finally {
+      setShredBusy(false);
+      setShredConfirmOpen(false);
+      setShredPicked([]);
+    }
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <InfoBanner c={c}>
@@ -214,6 +291,15 @@ export default function ProtectView({ c, isLight, onAction }) {
               }}
             >Change Default Browser</button>
             <Toggle c={c} on={browserProtection} onChange={setBrowserProtection} label="Activate Browser Protection" />
+            <button
+              onClick={handleBrowserCheck}
+              className="theme-pill-btn"
+              style={{
+                display: 'block', background: 'transparent', color: c.accent, border: 'none',
+                fontSize: 11, textDecoration: 'underline', cursor: 'pointer',
+                fontFamily: 'inherit', textAlign: 'left', padding: 0, marginTop: 10,
+              }}
+            >{browserCheckBusy ? 'Checking…' : 'Check for hijacking now'}</button>
           </div>
 
           <div style={{ background: c.bgSecondary, border: `1px solid ${c.border}`, borderRadius: 8, padding: 14 }}>
@@ -238,8 +324,14 @@ export default function ProtectView({ c, isLight, onAction }) {
             c={c}
             items={USEFUL_TOOLS}
             columns={3}
-            onItemClick={(item) => setToolInfoOpen(item.id)}
+            onItemClick={(item) => {
+              if (item.id === 'shred') { handlePickFilesToShred(); return; }
+              setToolInfoOpen(item.id);
+            }}
           />
+          {shredResult && (
+            <div style={{ fontSize: 11, color: c.textSecondary, textAlign: 'center' }}>{shredResult}</div>
+          )}
         </div>
       </div>
 
@@ -301,6 +393,28 @@ export default function ProtectView({ c, isLight, onAction }) {
         actionLabel="—"
         onAction={() => {}}
         onClose={() => setAntimalwareOpen(false)}
+      />
+
+      <ItemListModal
+        c={c}
+        open={browserCheckOpen}
+        title="Browser Protection Check"
+        items={browserCheckItems}
+        actionLabel="—"
+        onAction={() => {}}
+        onClose={() => setBrowserCheckOpen(false)}
+      />
+
+      <ConfirmModal
+        c={c}
+        open={shredConfirmOpen}
+        busy={shredBusy}
+        title="Permanently shred these files?"
+        message="Each file is overwritten with random data 3 times before being deleted. This cannot be undone - there is no Recycle Bin, no Rescue Center recovery for shredded files."
+        details={shredPicked.length ? `${shredPicked.length} file${shredPicked.length === 1 ? '' : 's'} selected` : null}
+        confirmLabel="Shred permanently"
+        onConfirm={handleConfirmShred}
+        onCancel={() => { setShredConfirmOpen(false); setShredPicked([]); }}
       />
 
       {/* UsefulTools grid -> per-tool info modal */}

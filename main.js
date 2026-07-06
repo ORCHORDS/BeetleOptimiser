@@ -9,7 +9,7 @@
 // Why not setTitleBarOverlay()? It requires the OS-drawn frame to exist, so
 // it cannot be used together with frame: false. We render our own controls.
 
-const { app, BrowserWindow, ipcMain, shell, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, net, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -579,6 +579,38 @@ ipcMain.handle('optimizer:tweaks-revert', (_, id, token) => {
 // Driver check - read-only (installing a driver needs the vendor's own
 // package, out of scope for a safe scripted action).
 ipcMain.handle('optimizer:list-drivers', () => spawnOptimizer('scripts/optimize-drivers.ps1', []));
+
+// File Shredder - the user picks files via the OS's own native dialog
+// (no way to select "everything in a folder" by accident), then the
+// picked paths go through the usual confirm-token gate before the actual
+// (irreversible) overwrite-then-delete runs.
+ipcMain.handle('optimizer:pick-files-for-shred', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select files to shred',
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (result.canceled) return { canceled: true, paths: [] };
+  return { canceled: false, paths: result.filePaths };
+});
+ipcMain.handle('optimizer:shred-files', (_, paths, token) => {
+  consumeConfirmation(token, 'shred-files');
+  if (!Array.isArray(paths) || paths.length === 0) throw new Error('No files given to shred');
+  return spawnOptimizer('scripts/optimize-shredder.ps1', [...paths, '--yes']);
+});
+
+// Browser Protection check - read-only (HOSTS file hijack indicators,
+// Chrome/Edge homepage+startup URL tampering, default browser identity).
+ipcMain.handle('optimizer:browser-check', () => spawnOptimizer('scripts/optimize-browser-check.ps1', []));
+
+// Duplicates Finder - scan (size then SHA-256 grouping, read-only) and
+// delete (explicit paths only, confirm-gated - same no-wildcards principle
+// as the shredder).
+ipcMain.handle('optimizer:scan-duplicates', () => spawnOptimizer('scripts/optimize-duplicates.ps1', []));
+ipcMain.handle('optimizer:delete-duplicates', (_, paths, token) => {
+  consumeConfirmation(token, 'delete-duplicates');
+  if (!Array.isArray(paths) || paths.length === 0) throw new Error('No files given to delete');
+  return spawnOptimizer('scripts/optimize-duplicates.ps1', ['--delete', ...paths, '--yes']);
+});
 
 // Cleanup - scan only (no destructive ops)
 ipcMain.handle('optimizer:scan-junk', () => spawnOptimizer('scripts/optimize-cleanup.ps1', []));

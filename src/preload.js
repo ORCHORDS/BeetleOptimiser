@@ -94,6 +94,14 @@ contextBridge.exposeInMainWorld('beetleAPI', {
     tweaksRevert: (id, token) => ipcRenderer.invoke('optimizer:tweaks-revert', id, token),
     // Driver check (read-only)
     listDrivers: () => ipcRenderer.invoke('optimizer:list-drivers'),
+    // File Shredder
+    pickFilesForShred: () => ipcRenderer.invoke('optimizer:pick-files-for-shred'),
+    shredFiles: (paths, token) => ipcRenderer.invoke('optimizer:shred-files', paths, token),
+    // Browser Protection check (read-only)
+    browserCheck: () => ipcRenderer.invoke('optimizer:browser-check'),
+    // Duplicates Finder
+    scanDuplicates: () => ipcRenderer.invoke('optimizer:scan-duplicates'),
+    deleteDuplicates: (paths, token) => ipcRenderer.invoke('optimizer:delete-duplicates', paths, token),
     // Cleanup
     scanJunkFiles:  () => ipcRenderer.invoke('optimizer:scan-junk'),
     cleanJunkFiles: (token) => ipcRenderer.invoke('optimizer:clean-junk', token),
