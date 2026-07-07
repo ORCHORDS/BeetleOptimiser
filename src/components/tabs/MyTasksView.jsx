@@ -56,22 +56,16 @@ export default function MyTasksView({ c, isLight }) {
     if (!window.beetleAPI) { setError('Not available outside the packaged app.'); return; }
     setBusy(true); setError(null);
     try {
-      const argv = ['list'];
-      if (includeAll) argv.push('--all');
-      // Direct IPC call to list tasks - read-only, no token needed.
-      // The script outputs item events as NDJSON; main.js collects them.
-      const child = window.beetleAPI.optimizer.listScheduledTasks;
-      // The existing list IPC is fixed (no args). For the --all variant we
-      // shell out via system.shell as a fallback.
-      let result;
-      if (!includeAll) {
-        result = await window.beetleAPI.optimizer.listScheduledTasks();
-      } else {
-        result = await window.beetleAPI.system.shell(
-          'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-          'scripts/optimize-scheduled-tasks.ps1', 'list', '--all',
-        );
-      }
+      // main.js's optimizer:list-scheduled-tasks-all handler (added
+      // alongside this fix) spawns the same script through spawnOptimizer,
+      // which is what actually parses NDJSON stdout into {items: [...]} -
+      // this used to go through system.shell() directly, which returns
+      // raw {stdout, stderr, exitCode} instead, so result.items was always
+      // undefined and the "Include Microsoft\Windows\" view always showed
+      // zero tasks no matter what was actually scheduled.
+      const result = includeAll
+        ? await window.beetleAPI.optimizer.listScheduledTasksAll()
+        : await window.beetleAPI.optimizer.listScheduledTasks();
       const rows = (result.items || [])
         .filter((i) => i.event === 'item')
         .map((i) => i.item);
@@ -93,7 +87,20 @@ export default function MyTasksView({ c, isLight }) {
     const t = target.task;
     setBusy(true);
     try {
-      const token = await window.beetleAPI.optimizer.requestConfirm(target.action === 'delete' ? 'delete-scheduled-task' : target.action);
+      // main.js's consumeConfirmation() requires an EXACT string match
+      // against what main.js itself passes for each handler
+      // ('enable-scheduled-task' / 'disable-scheduled-task' /
+      // 'delete-scheduled-task') - requesting a token for the bare action
+      // name ('enable'/'disable') always failed that check, so clicking
+      // Enable or Disable here threw 'Action "..." was not explicitly
+      // confirmed' every time. Delete already used the full name and
+      // worked correctly.
+      const confirmAction = {
+        enable: 'enable-scheduled-task',
+        disable: 'disable-scheduled-task',
+        delete: 'delete-scheduled-task',
+      }[target.action];
+      const token = await window.beetleAPI.optimizer.requestConfirm(confirmAction);
       if (target.action === 'enable') {
         await window.beetleAPI.optimizer.enableScheduledTask(t.path, t.name, token);
       } else if (target.action === 'disable') {

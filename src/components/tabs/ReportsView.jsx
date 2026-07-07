@@ -34,27 +34,22 @@ export default function ReportsView({ c, isLight, onNavigate }) {
     if (!window.beetleAPI) { setErr('Not available outside the packaged app.'); return; }
     setBusy(true); setErr(null);
     try {
-      // Spawn the report reader via PowerShell - same shape as spawnOptimizer
-      // output (NDJSON with event:'report' per line + event:'finished' at end).
-      const result = await window.beetleAPI.system.shell(
-        'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        'Get-Content -LiteralPath $env:LOCALAPPDATA\\BeetleOptimiser\\reports\\reports.jsonl -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json | ConvertTo-Json -Compress } catch { $null } }',
-      );
-      const out = (result && (result.items || result.output || [])).join('\n');
-      // system.shell returns the raw stdout in different shapes - parse all lines
-      const lines = String(out).split('\n').map((l) => l.trim()).filter(Boolean);
+      // main.js's reports:list handler reads+parses reports.jsonl directly.
+      // This used to go through system.shell() (expecting a parsed
+      // {items:[...]} shape that IPC never actually returns - it's raw
+      // {stdout, stderr, exitCode} - see main.js's system:shell handler),
+      // so result.items/result.output were always undefined and this tab
+      // could never show a single row regardless of what was logged.
+      const result = await window.beetleAPI.reports.list();
       const parsed = [];
       let bytesSum = 0, count = 0;
       const actCounts = {};
-      for (const line of lines) {
-        try {
-          const r = JSON.parse(line);
-          if (!r || !r.tool) continue;
-          parsed.push(r);
-          bytesSum += Number(r.bytes || 0);
-          count += Number(r.files || 0);
-          actCounts[r.tool] = (actCounts[r.tool] || 0) + 1;
-        } catch {}
+      for (const r of result.items || []) {
+        if (!r || !r.tool) continue;
+        parsed.push(r);
+        bytesSum += Number(r.bytes || 0);
+        count += Number(r.files || 0);
+        actCounts[r.tool] = (actCounts[r.tool] || 0) + 1;
       }
       parsed.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
       setRows(parsed);

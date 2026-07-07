@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('beetleAPI', {
     enableService: (name, token) => ipcRenderer.invoke('optimizer:enable-service', name, token),
     // Task Scheduler manager
     listScheduledTasks: () => ipcRenderer.invoke('optimizer:list-scheduled-tasks'),
+    listScheduledTasksAll: () => ipcRenderer.invoke('optimizer:list-scheduled-tasks-all'),
     disableScheduledTask: (taskPath, taskName, token) => ipcRenderer.invoke('optimizer:disable-scheduled-task', taskPath, taskName, token),
     enableScheduledTask: (taskPath, taskName, token) => ipcRenderer.invoke('optimizer:enable-scheduled-task', taskPath, taskName, token),
     createScheduledTask: (name, trigger, command, args, token) => ipcRenderer.invoke('optimizer:create-scheduled-task', name, trigger, command, args, token),
@@ -204,6 +205,14 @@ contextBridge.exposeInMainWorld('beetleAPI', {
       ipcRenderer.invoke('optimizer:scan-registry'),
     repairRegistryIssues: (issues, token) =>
       ipcRenderer.invoke('optimizer:repair-registry', issues, token),
+  },
+
+  // REPORTS: the Reports tab's audit-log reader. Reads+parses
+  // reports.jsonl directly in main.js - ReportsView.jsx used to fetch this
+  // via system.shell() (expecting a parsed {items:[...]} shape that IPC
+  // never actually returns), which meant the tab could never show a row.
+  reports: {
+    list: () => ipcRenderer.invoke('reports:list'),
   },
 
   // STORE: thin wrapper around electron-store (a small JSON-on-disk key/value

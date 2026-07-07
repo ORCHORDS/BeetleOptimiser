@@ -1081,6 +1081,36 @@ ipcMain.handle('optimizer:repair-registry', (_, issues, token) => {
   return spawnOptimizer('scripts/optimize-registry.ps1', ['fix', '--id', (issues ?? 'all'), '--yes']);
 });
 
+// "Include Microsoft\Windows\" scheduled-tasks view - MyTasksView.jsx used
+// to get this via system.shell() directly, but that IPC returns raw
+// {stdout, stderr, exitCode} (see system:shell above), not the parsed
+// {items: [...]} shape spawnOptimizer produces - so `result.items` was
+// always undefined and the "all tasks" view always showed zero rows.
+// Routing through spawnOptimizer like every other list call fixes it.
+ipcMain.handle('optimizer:list-scheduled-tasks-all', () =>
+  spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['list', '--all']));
+
+// Reports (audit log) reader. ReportsView.jsx used to read this via
+// system.shell() too, with the same {stdout,...} vs {items: [...]}
+// mismatch - `result.items`/`result.output` were both always undefined,
+// so the Reports tab could never show a single row regardless of what
+// was actually logged. Reading the JSONL file directly here is also
+// simpler and more reliable than shelling out to PowerShell just to
+// re-serialize JSON that's already on disk.
+ipcMain.handle('reports:list', () => {
+  // process.env.LOCALAPPDATA, not app.getPath(...) - matches exactly what
+  // every optimize-*.ps1 script uses ($env:LOCALAPPDATA) to write here,
+  // with no uncertainty about which Electron getPath() name maps to it.
+  const reportsPath = path.join(process.env.LOCALAPPDATA, 'BeetleOptimiser', 'reports', 'reports.jsonl');
+  if (!fs.existsSync(reportsPath)) return { items: [] };
+  const lines = fs.readFileSync(reportsPath, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean);
+  const items = [];
+  for (const line of lines) {
+    try { items.push(JSON.parse(line)); } catch { /* skip a malformed line */ }
+  }
+  return { items };
+});
+
 // Windows/Linux: activating the beetleoptimiser:// protocol launches a new
 // OS process of this same exe with the URL as an argv entry. Without a
 // single-instance lock, that would open a second app window; with it, the
