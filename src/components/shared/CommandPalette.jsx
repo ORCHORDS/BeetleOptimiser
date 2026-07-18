@@ -125,9 +125,15 @@ export default function CommandPalette({ c, isLight, open, onClose, onNavigate, 
     if (item.kind === 'tab' && onNavigate) onNavigate(item.payload);
     if (item.kind === 'tile' && onAction) onAction(item.payload);
     if (item.kind === 'article' && onNavigate) {
+      // Dispatch a CustomEvent on window so the AskQuestionView listener
+      // picks it up the next render. sessionStorage is set as a fallback
+      // so a stale-instance handoff across an app restart still works
+      // (the listener cleans the key on receipt).
       onNavigate('Ask a Question');
-      // Hand the picked article to the Ask view via a session-storage hint.
       try { sessionStorage.setItem('beetle-prefill-article', item.payload.slug); } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent('beetle:prefill-article', { detail: { slug: item.payload.slug } }));
+      } catch {}
     }
     onClose();
   }

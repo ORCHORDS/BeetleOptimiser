@@ -161,26 +161,32 @@ export default function AskQuestionView({ c, isLight }) {
   }, [messages, thinking]);
 
   // Pick up an article selected via the Ctrl+K command palette.
-  // CommandPalette.jsx writes the article slug to
-  // sessionStorage('beetle-prefill-article') when the user picks
-  // an article result, then navigates to this tab. We poll
-  // sessionStorage on a 250ms timer to consume that value as the
-  // chat input (the RAG search ranks the slug top because every
-  // word in the slug appears in the article's title + body). The
-  // poll is the only practical way to communicate between two
-  // unrelated components without wiring a global event bus, and
-  // 250ms is cheap (it's a single key read on every tick). The
-  // interval clears itself when the timer is unmounted (cleanup
-  // runs on tab switch).
+  // CommandPalette.jsx dispatches a 'beetle:prefill-article' CustomEvent
+  // on `window` when the user picks an article result. We listen for
+  // that event here; on receipt, sendMessage(slug) fires the RAG search
+  // which ranks the slug top (every word in the slug appears in the
+  // article's title + body). CustomEvents were chosen over a module-
+  // level event bus because:
+  //   - they cross the App.jsx / CommandPalette.jsx / AskQuestionView.jsx
+  //     boundary without any sidecar module
+  //   - they don't require the publisher + subscriber to share an import
+  //     (so CommandPalette doesn't have to know AskQuestionView's
+  //     internal hook contract)
+  //   - cleanup is the standard useEffect return (no manual unsubscribe)
+  // The sessionStorage round-trip from earlier is left in place as a
+  // belt-and-braces fallback for stale-instance handoff across an app
+  // restart, but is no longer the primary transport.
   useEffect(() => {
-    const id = setInterval(() => {
-      let next = null;
-      try { next = sessionStorage.getItem('beetle-prefill-article'); } catch { return; }
-      if (!next) return;
+    function onPrefill(e) {
+      const slug = e?.detail?.slug;
+      if (!slug) return;
       try { sessionStorage.removeItem('beetle-prefill-article'); } catch {}
-      sendMessage(next);
-    }, 250);
-    return () => clearInterval(id);
+      sendMessage(slug);
+    }
+    window.addEventListener('beetle:prefill-article', onPrefill);
+    // Also clear any leftover value from a previous app run.
+    try { sessionStorage.removeItem('beetle-prefill-article'); } catch {}
+    return () => window.removeEventListener('beetle:prefill-article', onPrefill);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
