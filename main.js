@@ -439,6 +439,26 @@ ipcMain.handle('system:open-external', async (_, url) => {
   if (typeof url !== 'string' || !url) {
     throw new Error('openExternal: url is required');
   }
+  // URL scheme allowlist. shell.openExternal() in Electron 33 will
+  // happily open any external protocol URL the OS recognizes (mailto:,
+  // file://, ms-windows-store:, smb:, javascript:, etc). A malicious
+  // renderer (or a DevTools-driven attack via the contextBridge
+  // surface) could otherwise trigger a local file open or a custom
+  // protocol handler. Restrict the renderer's openExternal call to
+  // the schemes we actually need: web URLs (http/https) and mailto.
+  // The OS default browser handles http/https, and mailto: opens the
+  // user's mail agent. Anything else (file:, smb:, custom protocols)
+  // is rejected.
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    throw new Error('openExternal: url is malformed');
+  }
+  const allowed = new Set(['http:', 'https:', 'mailto:']);
+  if (!allowed.has(parsed.protocol)) {
+    throw new Error(`openExternal: scheme "${parsed.protocol}" is not allowed`);
+  }
   await shell.openExternal(url);
   return { ok: true };
 });

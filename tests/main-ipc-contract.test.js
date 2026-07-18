@@ -326,3 +326,83 @@ test('NDJSON: empty chunk input yields zero items', () => {
   assert.equal(parseScriptOutput(['']).items.length, 0);
   assert.equal(parseScriptOutput(['\n\n\n']).items.length, 0);
 });
+
+
+// ====================== openExternal URL allowlist ===================
+
+// Mirror of the system:open-external handler in main.js. The
+// production code only allows http:, https:, and mailto: schemes;
+// anything else (file:, smb:, javascript:, custom protocols) is
+// rejected before the call to shell.openExternal.
+
+function validateExternalUrl(url) {
+  if (typeof url !== 'string' || !url) {
+    throw new Error('openExternal: url is required');
+  }
+  let parsed;
+  try { parsed = new URL(url); } catch (_) {
+    throw new Error('openExternal: url is malformed');
+  }
+  const allowed = new Set(['http:', 'https:', 'mailto:']);
+  if (!allowed.has(parsed.protocol)) {
+    throw new Error(`openExternal: scheme "${parsed.protocol}" is not allowed`);
+  }
+  return parsed;
+}
+
+test('openExternal: accepts http://', () => {
+  const u = validateExternalUrl('http://example.com/foo');
+  assert.equal(u.protocol, 'http:');
+});
+
+test('openExternal: accepts https://', () => {
+  const u = validateExternalUrl('https://github.com/ORCHORDS/BeetleOptimiser');
+  assert.equal(u.protocol, 'https:');
+});
+
+test('openExternal: accepts mailto:', () => {
+  const u = validateExternalUrl('mailto:crm@orchords.com');
+  assert.equal(u.protocol, 'mailto:');
+});
+
+test('openExternal: rejects file:// (local file open)', () => {
+  assert.throws(
+    () => validateExternalUrl('file:///C:/Windows/System32/cmd.exe'),
+    /scheme "file:"/,
+  );
+});
+
+test('openExternal: rejects smb:// (Windows share open)', () => {
+  assert.throws(
+    () => validateExternalUrl('smb://server/share'),
+    /scheme "smb:"/,
+  );
+});
+
+test('openExternal: rejects javascript: (XSS-as-launch)', () => {
+  assert.throws(
+    () => validateExternalUrl('javascript:alert(1)'),
+    /scheme "javascript:"/,
+  );
+});
+
+test('openExternal: rejects custom OS protocols (ms-windows-store:)', () => {
+  assert.throws(
+    () => validateExternalUrl('ms-windows-store://pdp/?ProductId=foo'),
+    /not allowed/,
+  );
+});
+
+test('openExternal: rejects malformed URLs', () => {
+  assert.throws(() => validateExternalUrl('not a url at all'), /malformed/);
+  assert.throws(() => validateExternalUrl(''), /required/);
+  assert.throws(() => validateExternalUrl(null), /required/);
+  assert.throws(() => validateExternalUrl(123), /required/);
+});
+
+test('openExternal: accepts https with port, query, fragment', () => {
+  const u = validateExternalUrl('https://example.com:8443/path?x=1&y=2#frag');
+  assert.equal(u.protocol, 'https:');
+  assert.equal(u.hostname, 'example.com');
+  assert.equal(u.port, '8443');
+});
