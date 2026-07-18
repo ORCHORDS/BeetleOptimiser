@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "start": "npm run build && electron .",
-    "test": "node --test tests/main-ipc-contract.test.js tests/ragSearch.test.js",
+    "test": "node --test tests/*.test.js",
+    "test:watch": "node --test --watch tests/*.test.js",
     "package": "npm run build && electron-builder --win portable"
   },
   "keywords": [

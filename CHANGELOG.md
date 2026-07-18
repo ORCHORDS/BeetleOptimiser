@@ -17,15 +17,18 @@ The first production-ready public release. Built on Electron 33 + React 19 + Vit
 - Ctrl+K (Cmd+K) global search palette — searches every tab + tile + the RAG corpus + a static help list
 - Single-instance lock via Electron `app.requestSingleInstanceLock()`
 - Confirmation-token gate: `optimizer.request-confirm` mints a 30-second, single-use UUID; `consumeConfirmation(token, expectedAction)` validates and deletes the entry before any handler runs
-- Input validation regexes for every destructive handler: `validateDriveLetter` (A-Z), `validateProgramName` (rejects `;|\\*$#"`), `validateRegistryPath` (HKLM/HKCU/HKCR/HKU only)
 - Periodic confirmation-token sweeper (`setInterval(60s)`) evicts expired + abandoned tokens so the Map doesn't grow unbounded across long-running Electron sessions
 - Explicit cancel path (`optimizer:cancel-confirm`) so the renderer can clear a token when a ConfirmModal is dismissed without clicking Confirm
+- Input validation regexes for every destructive handler: `validateDriveLetter` (A-Z), `validateProgramName` (rejects `;|\\*$#"`), `validateRegistryPath` (HKLM/HKCU/HKCR/HKU only)
 - Live telemetry: persistent `scripts/telemetry.ps1` child process streams one JSON line every ~2 seconds (CPU, RAM, GPU, NET, per-drive disk) via `main.js`'s `createMainWindow` + `event.sender('telemetry')`
 - Per-tweak Windows registry backups under `%LOCALAPPDATA%\BeetleOptimiser\rescue\*.json` with Restore + Forget buttons in the Care Center tab
 - Distributed chunks via `vite.config.js`'s `manualChunks` (phosphor vendor split, lazy-loaded)
-- 26 unit tests via `node:test` (zero dependencies): validators, confirmation-token contract, NDJSON parser, RAG ranking algorithm — `npm test`
+- 46 unit tests via `node:test` (zero dependencies): validators, confirmation-token contract, NDJSON parser, RAG ranking algorithm, tab + tile inventory cross-checks, PowerShell script-quality linting — `npm test` / `npm run test:watch`
 - `examples/run-cleanup-scan.js` showing how to drive the same PowerShell engine from any Node script
-- `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `ROADMAP.md`
+- `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `ROADMAP.md`, `CHANGELOG.md`
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` + `.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/workflows/tests.yml` — GitHub Actions CI on Node 20 + 22 LTS matrix + a fresh-clone verify job that only runs on master
+- `engines: { "node": ">=20.0.0" }` + `.nvmrc` (=20) for `nvm` / `fnm` / `volta` users
 - `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` + `.github/PULL_REQUEST_TEMPLATE.md`
 - `engines: { "node": ">=20.0.0" }` + `.nvmrc` (=20) for `nvm` / `fnm` / `volta` users
 - GitHub Action (`tests.yml`): `npm test` + `npm run build` on every push + PR (Node 20 + Node 22 matrix)

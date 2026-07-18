@@ -19,8 +19,12 @@ auth, no paid tier, no telemetry sent anywhere.
 - [x] Confirmation-token gate for destructive actions
 - [x] Input-validation regexes on every destructive handler
 - [x] Ctrl+K global search palette (tabs + tiles + 51 RAG articles + help)
-- [x] 26 unit tests (`npm test`) covering validators + the token
-      contract + the NDJSON parser + the RAG algorithm
+- [x] Memory-leak fix: periodic + explicit cancellation for the confirmation-token store
+- [x] 46 unit tests (`npm test`) covering validators + the token
+      contract + the NDJSON parser + the RAG algorithm + cross-tab /
+      cross-tile inventory + PowerShell script-quality linting
+- [x] `npm test:watch` for fast dev feedback (Node --test --watch)
+- [x] GitHub Actions CI on Node 20 + 22 LTS matrix + fresh-clone verify job on master
 - [x] MIT license + LICENSE file + CONTRIBUTING + SECURITY + CODE_OF_CONDUCT + .github templates
 - [x] Single-instance lock + frameless window with custom Min / Close
 - [x] Live telemetry via persistent `telemetry.ps1` (CPU / RAM / GPU / NET / per-drive)
