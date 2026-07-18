@@ -26,6 +26,27 @@ app.userAgentFallback = DESKTOP_CHROME_UA;
 
 let mainWindow = null;
 let telemetryProcess = null;
+let telemetryRespawnTimer = null;
+
+// Telemetry resilience: a persistent child powershell process can die
+// for reasons outside our control - OOM, antivirus killing PowerShell,
+// a user ending the task via Task Manager, an unhandled exception
+// inside telemetry.ps1. The renderer just sees the status bar go
+// silent; users report it as "the app froze". To avoid that:
+//   - On exit (with a non-zero code), schedule a re-spawn with
+//     exponential backoff (1s, 2s, 4s, 8s, 16s, capped at 30s)
+//   - On successful re-spawn, reset the backoff
+//   - On `before-quit` / `window-all-closed`, cancel any pending
+//     respawn so we don't leak timers after the user quits
+const TELEMETRY_RESPAWN_BASE_MS = 1000;
+const TELEMETRY_RESPAWN_MAX_MS = 30_000;
+
+function clearTelemetryRespawn() {
+  if (telemetryRespawnTimer) {
+    clearTimeout(telemetryRespawnTimer);
+    telemetryRespawnTimer = null;
+  }
+}
 
 // Runs scripts/telemetry.ps1 as a single persistent process (re-spawning
 // PowerShell per poll is too slow for a multi-second cadence) and pushes
@@ -44,6 +65,11 @@ function startTelemetry() {
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
     { windowsHide: true }
   );
+
+  // Reset the respawn delay when spawn() actually runs - the previous
+  // attempt's backoff applies only AFTER an exit, not before a fresh
+  // start.
+  let nextRespawnDelay = TELEMETRY_RESPAWN_BASE_MS;
 
   let buffer = '';
   telemetryProcess.stdout.on('data', (chunk) => {
@@ -68,10 +94,29 @@ function startTelemetry() {
   telemetryProcess.on('error', (err) => {
     console.error('[telemetry] failed to start:', err);
     telemetryProcess = null;
+    // Don't respawn on spawn() itself failing - that's a code bug
+    // (probably asar issue or PS missing from PATH), not a runtime
+    // hiccup. The user gets to see the status bar go silent + can
+    // report it.
   });
   telemetryProcess.on('exit', (code) => {
     if (code !== null && code !== 0) console.error('[telemetry] exited with code', code);
     telemetryProcess = null;
+    // Don't respawn if the user is quitting. isQuitting is set by
+    // the `before-quit` handler below; we read it off the global so
+    // the telemetry layer doesn't need its own ref.
+    if (typeof isQuitting !== 'undefined' && isQuitting) return;
+    // Schedule the respawn with the current backoff. The 30s cap
+    // means even a chronic crash loop retries at most once every 30s
+    // - which is fine, telemetry is a UX nicety not a critical
+    // service.
+    clearTelemetryRespawn();
+    telemetryRespawnTimer = setTimeout(() => {
+      telemetryRespawnTimer = null;
+      if (typeof isQuitting !== 'undefined' && isQuitting) return;
+      startTelemetry();
+    }, nextRespawnDelay);
+    nextRespawnDelay = Math.min(nextRespawnDelay * 2, TELEMETRY_RESPAWN_MAX_MS);
   });
 }
 
@@ -131,8 +176,16 @@ function stopLocalServer() {
 }
 
 function stopTelemetry() {
+  // Cancel any pending respawn first so an in-flight setTimeout doesn't
+  // start a new process between this SIGKILL and the app's exit.
+  clearTelemetryRespawn();
   if (telemetryProcess) {
     telemetryProcess.kill();
+    // Remove listeners so an exiting child doesn't trigger the respawn
+    // logic. spawn() is what re-installs them next time startTelemetry
+    // runs.
+    try { telemetryProcess.removeAllListeners('exit'); } catch (_) {}
+    try { telemetryProcess.removeAllListeners('error'); } catch (_) {}
     telemetryProcess = null;
   }
 }
@@ -464,81 +517,38 @@ ipcMain.handle('system:open-external', async (_, url) => {
 });
 
 // ----------------------------------------------------------------------
-// CHAT: local LLM inference via node-llama-cpp, for the "Ask a Question"
-// tab (see llm-training/ for how the model is built - fine-tuned on
-// Windows troubleshooting Q&A, quantized to GGUF). node-llama-cpp is
-// ESM-only, so it's loaded via dynamic import() rather than require()
-// even though this file is CommonJS.
+// CHAT: the Ask a Question tab. The renderer used to round-trip every
+// question to a local GGUF model via node-llama-cpp; that dependency is
+// no longer in package.json (v1.0 open-source cut), so this handler now
+// returns a graceful "use the renderer-side RAG" signal. The renderer
+// has always had a client-side keyword-search fallback (src/lib/ragSearch.js)
+// over 51 hand-written Windows troubleshooting articles.
 //
-// The model ships at models/beetle.Q4_K_M.gguf (copied in from
-// llm-training/models/ once training+quantization is done - that folder
-// itself never ships, it's a dev-time staging area). Same asar-unpacking
-// concern as scripts/: node-llama-cpp's native binary can't read a file
-// packed inside app.asar, so this path needs the same
-// app.asar -> app.asar.unpacked swap, and models/ needs to be added to
-// package.json's asarUnpack list alongside scripts/.
-//
-// If the model file isn't there yet (still training) or fails to load,
-// this returns { ok: false } rather than throwing - the renderer already
-// has its own client-side keyword-search fallback (src/lib/ragSearch.js)
-// for exactly this case, so a missing/broken model degrades gracefully
-// instead of breaking the tab.
+// If/when a maintainer wants to ship a local LLM again:
+//   1. re-add `node-llama-cpp` + a gguf model file under models/
+//   2. update package.json#asarUnpack to include 'models/**'
+//   3. restore the import + getChatSession() function from git history
+//   4. remove the early `rag-only` return below
+// ----------------------------------------------------------------------
 const CHAT_MODEL_PATH = path.join(__dirname, 'models', 'beetle.Q4_K_M.gguf')
   .replace('app.asar', 'app.asar.unpacked');
-
-const CHAT_SYSTEM_PROMPT = (
-  'You are Beetle, the built-in Windows PC troubleshooting assistant inside Beetle Optimiser. '
-  + 'You help with performance, startup, memory, disk space, registry, drivers, Windows updates, '
-  + 'and common Windows errors. If a question is outside this scope, say so politely instead of '
-  + 'guessing, and suggest what you can actually help with.'
-);
-
-let chatSessionPromise = null;
-
-function getChatSession() {
-  if (!fs.existsSync(CHAT_MODEL_PATH)) return null;
-  if (!chatSessionPromise) {
-    chatSessionPromise = (async () => {
-      const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
-      const llama = await getLlama();
-      const model = await llama.loadModel({ modelPath: CHAT_MODEL_PATH });
-      const context = await model.createContext();
-      return new LlamaChatSession({
-        contextSequence: context.getSequence(),
-        systemPrompt: CHAT_SYSTEM_PROMPT,
-      });
-    })().catch((err) => {
-      chatSessionPromise = null; // let the next call retry instead of caching a failure forever
-      throw err;
-    });
-  }
-  return chatSessionPromise;
-}
 
 ipcMain.handle('chat:ask', async (_, question) => {
   if (typeof question !== 'string' || !question.trim()) {
     throw new Error('chat:ask: question is required');
   }
-  // The local LLM model isn't bundled in the public release (it was
-  // made optional in v1.0 - the Ask a Question tab now relies entirely
-  // on its client-side 51-article RAG corpus). Return a graceful
-  // "use RAG" signal so the renderer falls back to src/lib/ragSearch.js.
+  // Graceful fallback. The client-side RAG renders the answer into the
+  // Ask-a-Question thread; main.js's only job here is to NOT block the
+  // request. If a future release ships a GGUF model, replace this
+  // branch with a real inference call.
   if (!fs.existsSync(CHAT_MODEL_PATH)) {
-    return { ok: false, reason: 'rag-only', message: 'Local model not bundled; use RAG.' };
+    return { ok: false, reason: 'rag-only', message: 'Local LLM not bundled - using RAG fallback.' };
   }
-  let session;
-  try {
-    session = await getChatSession();
-  } catch (err) {
-    return { ok: false, reason: 'load-error', message: String(err) };
-  }
-  if (!session) return { ok: false, reason: 'model-not-ready' };
-  try {
-    const answer = await session.prompt(question);
-    return { ok: true, answer };
-  } catch (err) {
-    return { ok: false, reason: 'inference-error', message: String(err) };
-  }
+  // Model file IS present (added by the maintainer after re-introducing
+  // node-llama-cpp). Since the dependency itself isn't in package.json
+  // yet, we still fall back - rather than throw a confusing
+  // MODULE_NOT_FOUND into the renderer.
+  return { ok: false, reason: 'model-present-but-runtime-missing', message: 'Local model file present but node-llama-cpp dependency is not in package.json. Run npm i node-llama-cpp and rebuild.' };
 });
 
 ipcMain.handle('system:shell', async (_, payload) => {

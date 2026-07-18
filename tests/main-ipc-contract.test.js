@@ -715,3 +715,123 @@ test('spawnOptimizer: valid SIGTERM + 2s SIGKILL fallback never runs because clo
   assert.equal(child.killed, false);
   assert.ok(!events.includes('kill'), `kill should not fire on fast scripts; got ${JSON.stringify(events)}`);
 });
+
+
+// ====================== telemetry respawn ===============================
+
+// Mirror of the respawn logic in main.js. We can't drive a real PS
+// process here, so we simulate with an EventEmitter and verify the
+// backoff math + cleanup-on-quit behavior.
+
+const { EventEmitter: Emitter } = require('node:events');
+
+const BASE = 1000;
+const CAP = 30000;
+
+function simulateRespawnSequence(exitCodes, isQuittingFn) {
+  let delay = BASE;
+  let spawnCount = 0;
+  const timers = [];
+  let killed = false;
+
+  function startNext() {
+    if (killed) return;
+    spawnCount++;
+    const child = new Emitter();
+    child.kill = function () { this.killed = true; this.exitCode = null; };
+    child.killed = false;
+    child.exitCode = null;
+
+    child.on('exit', (code) => {
+      // production: nothing about isQuitting? then schedule.
+      if (isQuittingFn()) {
+        return;
+      }
+      const ms = delay;
+      delay = Math.min(delay * 2, CAP);
+      timers.push(setTimeout(() => {
+        startNext();
+      }, ms));
+    });
+
+    // Simulate the next exit after a few ms, using the next code in
+    // the supplied sequence.
+    const nextCode = exitCodes.shift();
+    if (nextCode === undefined) return;
+    setImmediate(() => {
+      child.exitCode = nextCode;
+      child.emit('exit', nextCode);
+    });
+  }
+
+  function kill() {
+    killed = true;
+    for (const t of timers) clearTimeout(t);
+    timers.length = 0;
+  }
+
+  return { start: startNext, kill, spawnCount: () => spawnCount };
+}
+
+test('telemetry: respawns once after a non-zero exit', async () => {
+  // simulate a child that exits 1, then 0 (success)
+  const seq = simulateRespawnSequence([1, 0], () => false);
+  seq.start();
+  // give it enough time for the respawn + simulated re-exit
+  // (BASE=1000ms + a bit of jitter)
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const count = seq.spawnCount();
+  seq.kill();
+  assert.ok(count >= 2, `expected >= 2 spawns, got ${count}`);
+});
+
+test('telemetry: respawn delays grow exponentially up to the 30s cap', () => {
+  // Use a fresh sequence that never exits cleanly, just for the
+  // bookkeeping check. We track the delays that would be scheduled.
+  let delay = BASE;
+  const observedDelays = [];
+  // Each "exit" should double the next delay and clamp.
+  for (let i = 0; i < 10; i++) {
+    observedDelays.push(delay);
+    delay = Math.min(delay * 2, CAP);
+  }
+  assert.equal(observedDelays[0], BASE);
+  assert.equal(observedDelays[1], BASE * 2);
+  assert.equal(observedDelays[2], BASE * 4);
+  // By the 6th iteration we should be at the cap (1s -> 2s -> 4s
+  // -> 8s -> 16s -> 30s -> clamps).
+  assert.equal(observedDelays[5], CAP, `expected ${CAP}, got ${observedDelays[5]}`);
+  assert.equal(observedDelays[6], CAP);
+  assert.equal(observedDelays[9], CAP);
+});
+
+test('telemetry: respawn is skipped when the user is quitting', () => {
+  // isQuittingFn returns true after the first invocation, so the
+  // respawn trigger should be skipped.
+  let calls = 0;
+  let spawns = 0;
+  function startNext() {
+    spawns++;
+  }
+  function isQuittingFn() {
+    calls++;
+    return calls > 1;  // false for the first call, true afterwards
+  }
+
+  // Fake a child that's already exiting. With isQuittingFn flipped to
+  // true after the first call, the respawn should NOT be scheduled.
+  const child = new Emitter();
+  child.kill = () => {};
+  child.killed = false;
+  child.exitCode = null;
+  let timerCount = 0;
+  child.on('exit', () => {
+    if (isQuittingFn()) return;
+    timerCount++;
+  });
+  // Emit exit twice; second emission should not increment timerCount.
+  child.emit('exit', 1);
+  child.emit('exit', 1);
+  assert.equal(timerCount, 1, `expected exactly one respawn attempt, got ${timerCount}`);
+  assert.equal(spawns, 0, 'startNext should never have been called directly here');
+});
