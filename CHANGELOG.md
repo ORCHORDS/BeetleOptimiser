@@ -23,7 +23,9 @@ The first production-ready public release. Built on Electron 33 + React 19 + Vit
 - Live telemetry: persistent `scripts/telemetry.ps1` child process streams one JSON line every ~2 seconds (CPU, RAM, GPU, NET, per-drive disk) via `main.js`'s `createMainWindow` + `event.sender('telemetry')`
 - Per-tweak Windows registry backups under `%LOCALAPPDATA%\BeetleOptimiser\rescue\*.json` with Restore + Forget buttons in the Care Center tab
 - Distributed chunks via `vite.config.js`'s `manualChunks` (phosphor vendor split, lazy-loaded)
-- 46 unit tests via `node:test` (zero dependencies): validators, confirmation-token contract, NDJSON parser, RAG ranking algorithm, tab + tile inventory cross-checks, PowerShell script-quality linting — `npm test` / `npm run test:watch`
+- **URL-scheme allowlist** on `system:open-external` (http + https + mailto only) — anything else (file://, smb:, javascript:, custom OS protocols) is rejected before the call reaches `shell.openExternal`
+- **Command allowlist** on `system:shell` (start ms-settings: + powershell -NoProfile -Command Remove-Item on rescue/ only) — chained `;`/`&&` and arbitrary commands (cmd, bash, sh, wscript, mshta, rundll32) are explicitly rejected
+- 68 unit tests via `node:test` (zero dependencies): validators, confirmation-token contract, NDJSON parser, RAG ranking algorithm, tab + tile inventory cross-checks, PowerShell script-quality linting, URL-scheme allowlist, system:shell command allowlist — `npm test` / `npm run test:watch`
 - `examples/run-cleanup-scan.js` showing how to drive the same PowerShell engine from any Node script
 - `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `ROADMAP.md`, `CHANGELOG.md`
 - `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` + `.github/PULL_REQUEST_TEMPLATE.md`

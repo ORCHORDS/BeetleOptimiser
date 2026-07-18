@@ -108,6 +108,22 @@ Every method on that surface is hand-written.</li>
 goes through <code>main.js</code>'s <code>spawnOptimizer</code> helper, which
 always prepends <code>-NoProfile</code> and <code>-ExecutionPolicy Bypass</code> and
 explicitly passes the script path. No concatenation with user input.</li>
+<li>The <code>system:open-external</code> handler restricts the URL scheme to
+a 3-item allowlist (<code>http:</code>, <code>https:</code>, <code>mailto:</code>).
+Anything else (file://, smb:, javascript:, custom OS protocols) is
+rejected before the call reaches <code>shell.openExternal</code>. A malicious
+renderer (or DevTools-driven attack through the contextBridge) cannot
+open a local file or trigger a custom protocol handler.</li>
+<li>The <code>system:shell</code> handler is restricted to a 2-item command
+allowlist: <code>start <one-arg></code> (only when the arg starts with
+<code>ms-settings:</code>) and <code>powershell -NoProfile -Command <one-command></code>
+(only when the -Command is a single Remove-Item on a rescue backup
+file). Chained commands (<code>;</code> / <code>&&</code>) and arbitrary commands
+(<code>cmd</code>, <code>bash</code>, <code>sh</code>, <code>wscript</code>, <code>mshta</code>, <code>rundll32</code>)
+are explicitly rejected. The -Command string is matched against a
+tight regex that requires the exact verb + the exact path prefix -
+so a malicious renderer that tries to smuggle <code>;</code> chained
+deletions is rejected before any subprocess is spawned.</li>
 <li>The custom protocol handler (<code>beetleoptimiser://</code>) accepts ONLY
 URLs whose host is empty and whose path is one of the pre-registered
 verbs (<code>beetleDefrag</code>, <code>beetleScanJunk</code>). Unknown verbs
