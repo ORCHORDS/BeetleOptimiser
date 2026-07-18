@@ -61,15 +61,18 @@ This exists because an earlier version fired destructive operations unconditiona
 
 ### Prerequisites
 - Windows 10 / 11 (x64)
-- **Node.js 20+** (Electron 33 requires Node 20 LTS at runtime)
+- **Node.js 20+ LTS** (Node 22 also works; older Node 18 will not). The
+  pinned minimum is recorded in `package.json#engines` and an `.nvmrc`
+  is checked in for `nvm` / `fnm` / `volta` users.
 - Git (for development only)
+- About 700 MB of free disk for `node_modules/` + the built portable
 
 ### Install
 
 ```powershell
 git clone https://github.com/ORCHORDS/BeetleOptimiser.git
 cd BeetleOptimiser
-npm install
+npm ci                # or `npm install` — see "Install gotchas" below
 ```
 
 `npm install` downloads:
@@ -77,10 +80,36 @@ npm install
 - `react@^19.0.0` + `react-dom@^19.0.0`
 - `vite@^6.0.7` (renderer build)
 - `@phosphor-icons/react@^2.1.10` (icons)
-- TypeScript / Vite plugin / electron-builder (dev)
+- electron-builder + Vite plugin (dev)
 
-The first `npm install` is slow because electron-builder downloads the
-Windows Electron binary. Subsequent installs are fast.
+The first install is slow because electron's binary postinstall pulls
+down + extracts a 115 MB Windows zip. Subsequent installs are fast.
+
+### Install gotchas
+
+Two known slow / flaky steps on a fresh checkout — both have a
+mitigation.
+
+**`npm install` may fail with `EBUSY` on `node_modules/esbuild`.** The
+esbuild postinstall tries to delete its own directory while another
+process still has a file handle. Re-running `npm ci` (which cleans
+before installing) gets past it. The symptoms look scary but the fix
+is just `rm -rf node_modules && npm ci`.
+
+**The Electron postinstall (`node_modules/electron/install.js`) can stall
+inside `extract-zip` on Node 26 + Windows.** The 115 MB zip is fully
+downloaded in `~/AppData/Local/electron/Cache/<hash>/` — you can manually
+unzip it and write `node_modules/electron/path.txt`:
+
+```powershell
+$src = "$env:LOCALAPPDATA\electron\Cache\*\electron-v33.4.11-win32-x64.zip"
+Expand-Archive -LiteralPath $src -DestinationPath node_modules\electron\dist
+'node_modules/electron/dist/electron.exe' | Out-File node_modules\electron\path.txt
+```
+
+After this, `npm test` + `npm run build` work normally. If even
+`npm ci` fails outright, retrying with `npm ci --no-audit` once or
+twice usually clears the postinstall lock.
 
 ### Develop
 

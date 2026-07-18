@@ -54,9 +54,9 @@ auth, no paid tier, no telemetry sent anywhere.
 The PR set should not introduce any of the following:
 
 - Any HTTP/HTTPS call from the renderer process to a server the user
-  did not explicitly configure (e.g. telemetry, Stripe, Firebase). The
-  only network requests the app should be making are to localhost (the
-  Vite dev server) or to user-configured endpoints.
+  did not explicitly configure (e.g. telemetry, payment processing,
+  analytics). The only network requests the app should be making are
+  to localhost (the Vite dev server).
 - Any registry write to `HKLM\...\Windows Run` that runs an arbitrary
   executable on the user's behalf. Auto-defrag-on-boot writes a fixed
   `defrag.exe` call — that's the only acceptable WinLogon entry.

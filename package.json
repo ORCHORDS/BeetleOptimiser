@@ -26,6 +26,9 @@
   "bugs": "https://github.com/orchords-com/BeetleOptimiser/issues",
   "author": "ORCHIDS.COM <crm@orchords.com>",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^33.4.11",

@@ -56,14 +56,16 @@ BeetleOptimiser-Electron/
 ├── content/
 │   └── rag-articles.js          51 hand-written articles for client-side
 │                                keyword matching (Ask a Question tab)
-├── llm-training/                OPTIONAL: data + scripts for fine-tuning a
-│                                local LLM on the 51 articles. Not part of
-│                                the app itself; see llm-training/README.md
 ├── index.html                   Vite entry
 ├── vite.config.js               Build-time config (manual vendor chunks)
 ├── package.json                 Dependencies + electron-builder config
 └── README.md
 ```
+
+> **Note:** an `llm-training/` folder exists in some local dev copies
+> for a separate, optional project that fine-tunes a local LLM on the
+> 51 RAG articles. It is **gitignored** in this repo and is not part of
+> the public app - please ignore it on a fresh clone.
 
 ## Adding a new optimizer tool
 
