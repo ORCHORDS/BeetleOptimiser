@@ -30,7 +30,7 @@ export default function StatusBar({ c, isLight, onToggleTheme }) {
       <span>SSD: {fmt(telemetry.ssd, '%')}</span>
       <span style={{ opacity: 0.4 }}>·</span>
       <span>HDD: {fmt(telemetry.hdd, '%')}</span>
-      <span style={{ marginLeft: 'auto' }}>v0.2.0</span>
+      <span style={{ marginLeft: 'auto' }}>v1.0.0</span>
       <Toggle c={c} on={isLight} onChange={onToggleTheme} label={isLight ? 'Light mode' : 'Dark mode'} />
     </div>
   );

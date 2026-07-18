@@ -234,7 +234,7 @@ export default function AskQuestionView({ c, isLight }) {
             Hello!
           </div>
           <div style={{ fontSize: 11, color: c.textMuted, marginBottom: 14 }}>
-            Beetle Optimiser v0.2.0
+            Beetle Optimiser v1.0.0
           </div>
           <div style={{ fontSize: 11, color: c.textSecondary, lineHeight: 1.5, marginBottom: 14, textAlign: 'left' }}>
             This app is fully local. No account, no telemetry, no network calls. The 51 hand-written articles below are answered client-side using keyword matching.
@@ -406,7 +406,7 @@ export default function AskQuestionView({ c, isLight }) {
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary }}>Beetle Optimiser</div>
-              <div style={{ fontSize: 11, color: c.textMuted }}>(version 0.2.0)</div>
+              <div style={{ fontSize: 11, color: c.textMuted }}>(version 1.0.0)</div>
             </div>
           </div>
           <div style={{

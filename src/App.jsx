@@ -16,8 +16,10 @@ import { useTheme } from './hooks/useTheme.js';
 import { useActiveTab } from './hooks/useActiveTab.js';
 import { useActiveNav } from './hooks/useActiveNav.js';
 import { useSidebarFold } from './hooks/useSidebarFold.js';
+import useGlobalSearch from './hooks/useGlobalSearch.js';
 
 import TitleBar from './components/TitleBar.jsx';
+import CommandPalette from './components/shared/CommandPalette.jsx';
 import TabBar from './components/TabBar.jsx';
 import RightSidebar from './components/RightSidebar.jsx';
 import StatusBar from './components/StatusBar.jsx';
@@ -71,6 +73,7 @@ export default function App() {
   const { active: activeTab, setActive: setActiveTab } = useActiveTab('Dashboard');
   const { active: activeNav, setActive: setActiveNav } = useActiveNav('pc');
   const { folded: sidebarFolded, toggle: toggleSidebar } = useSidebarFold(false);
+  const [paletteOpen, setPaletteOpen] = useGlobalSearch();
 
   const c = getColors(isLight);
 

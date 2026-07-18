@@ -11,29 +11,35 @@ import {
   Compass, ClockClockwise,
 } from '@phosphor-icons/react';
 
-export const BOTTOM_TILES = [
-  { id: 'ssd',        Icon: HardDrives,        line1: 'SSD',        line2: 'Optimizer',   isNew: true },
-  { id: 'uninstall',  Icon: Trash,             line1: 'Uninstall',  line2: 'Manager' },
-  { id: 'startup',    Icon: RocketLaunch,      line1: 'Startup',    line2: 'Manager' },
-  { id: 'browser',    Icon: GlobeHemisphereWest, line1: 'Browser',  line2: 'Protection' },
-  { id: 'driver',     Icon: ArrowsClockwise,   line1: 'Driver',     line2: 'Updater' },
-  { id: 'duplicate',  Icon: Copy,              line1: 'Duplicates', line2: 'Finder' },
-  { id: 'add',        Icon: PlusCircle,        line1: 'Add',        line2: 'tool' },
+export const TILES_PRIMARY = [
+  { id: 'ssd',        Icon: HardDrives,        label: 'SSD Optimizer' },
+  { id: 'uninstall',  Icon: Trash,             label: 'Uninstall Manager' },
+  { id: 'startup',    Icon: RocketLaunch,      label: 'Startup Manager' },
+  { id: 'browser',    Icon: GlobeHemisphereWest, label: 'Browser Protection' },
+  { id: 'driver',     Icon: ArrowsClockwise,   label: 'Driver Updater' },
+  { id: 'duplicate',  Icon: Copy,              label: 'Duplicates Finder' },
+  { id: 'add',        Icon: PlusCircle,        label: 'Add tool' },
+];
 
-  // Second row: 8 system tools.
-  { id: 'internet',   Icon: Lightning,         line1: 'Internet',   line2: 'Speed Up' },
-  { id: 'disk-explorer', Icon: FolderOpen,      line1: 'Disk',       line2: 'Explorer' },
-  { id: 'task-manager',  Icon: Cpu,             line1: 'Task',       line2: 'Manager' },
-  { id: 'addons',        Icon: PuzzlePiece,    line1: 'Add-ons',    line2: 'Manager' },
-  { id: 'wiper',         Icon: Eraser,          line1: 'Free Space', line2: 'Wiper' },
-  { id: 'slimmer',       Icon: TreeEvergreen,   line1: 'Windows',    line2: 'Slimmer' },
-  { id: 'mode',          Icon: Lightning,       line1: 'Mode',       line2: 'Switcher' },
-  { id: 'integrator',    Icon: Link,            line1: 'Shell',      line2: 'Integrator' },
-  { id: 'regdefrag',     Icon: Archive,         line1: 'Registry',   line2: 'Defrag' },
-  { id: 'actioncenter',  Icon: BellRinging,     line1: 'Action',     line2: 'Center' },
-  { id: 'debuglog',      Icon: FileArrowDown,   line1: 'Debug',      line2: 'Log' },
-  { id: 'diskpriority',  Icon: Lightning,       line1: 'Disk',       line2: 'Priority' },
-  { id: 'backupcleaner', Icon: Trash,           line1: 'Backup',     line2: 'Cleaner' },
-  { id: 'defragboot',    Icon: ClockClockwise,  line1: 'Defrag',     line2: 'on Boot' },
-  { id: 'bho',           Icon: Compass,        line1: 'Browser',    line2: 'BHO' },
+export const TILES_SYSTEM = [
+  { id: 'internet',   Icon: Lightning,         label: 'Internet Speed Up' },
+  { id: 'disk-explorer', Icon: FolderOpen,      label: 'Disk Explorer' },
+  { id: 'task-manager',  Icon: Cpu,             label: 'Task Manager' },
+  { id: 'addons',        Icon: PuzzlePiece,    label: 'Add-ons Manager' },
+  { id: 'wiper',         Icon: Eraser,          label: 'Free Space Wiper' },
+  { id: 'slimmer',       Icon: TreeEvergreen,   label: 'Windows Slimmer' },
+  { id: 'mode',          Icon: Lightning,       label: 'Mode Switcher' },
+  { id: 'integrator',    Icon: Link,            label: 'Shell Integrator' },
+  { id: 'regdefrag',     Icon: Archive,         label: 'Registry Defrag' },
+  { id: 'actioncenter',  Icon: BellRinging,     label: 'Action Center' },
+  { id: 'debuglog',      Icon: FileArrowDown,   label: 'Debug Log' },
+  { id: 'diskpriority',  Icon: Lightning,       label: 'Disk Priority' },
+  { id: 'backupcleaner', Icon: Trash,           label: 'Backup Cleaner' },
+  { id: 'defragboot',    Icon: ClockClockwise,  label: 'Defrag on Boot' },
+  { id: 'bho',           Icon: Compass,        label: 'Browser BHO' },
+];
+
+export const BOTTOM_TILES = [
+  ...TILES_PRIMARY.map(t => ({ ...t, line1: t.label.split(' ')[0], line2: t.label.split(' ').slice(1).join(' ') })),
+  ...TILES_SYSTEM.map(t => ({ ...t, line1: t.label.split(' ')[0], line2: t.label.split(' ').slice(1).join(' ') })),
 ];

@@ -16,7 +16,7 @@
 // each renders a real sub-panel powered by useTelemetry() + a small
 // state machine (status: on | off, configurable via the right-side Toggle).
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Laptop, Leaf, Briefcase, Wrench, GameController,
   Broom, ListChecks, RocketLaunch, HardDrive, CheckCircle,
@@ -110,6 +110,256 @@ function ItemListModalHost({ c, title, items }) {
           {line}
         </div>
       ))}
+    </div>
+  );
+}
+
+function HardwareMonitor({ c }) {
+  // Live snapshot of CPU/RAM/disk + per-volume free space + adapter info,
+  // via optimize-sysinfo.ps1 (read-only). Shows "Refresh" + "Open full
+  // System Information" buttons.
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    if (!window.beetleAPI) { setErr('Not available outside the packaged app.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const { items } = await window.beetleAPI.optimizer.getSysinfo();
+      // optimize-sysinfo emits a single 'sysinfo' event with the payload
+      const snap = items.find(i => i.event === 'sysinfo');
+      setData(snap || null);
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary }}>Hardware Monitoring</span>
+        <span style={{ background: '#3AA65C', color: 'white', fontSize: 10, fontWeight: 700,
+          padding: '2px 8px', borderRadius: 4 }}>LIVE</span>
+      </div>
+      <div style={{ fontSize: 12, color: c.textSecondary, lineHeight: 1.5, marginBottom: 8, maxWidth: 720 }}>
+        Live read-only snapshot of your machine's hardware. Refreshes on demand; nothing here changes disk content.
+      </div>
+      {err && <div style={{ background: c.bgSecondary, border: '1px solid #E0566B', borderRadius: 6,
+        padding: 10, marginBottom: 12, fontSize: 11, color: '#E0566B' }}>{err}</div>}
+      <div style={{ background: c.bgSecondary, border: `1px solid ${c.border}`,
+        borderRadius: 8, padding: '14px 18px', maxWidth: 720 }}>
+        {busy && <div style={{ fontSize: 12, color: c.textMuted, fontStyle: 'italic' }}>Reading…</div>}
+        {data && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: 10, fontSize: 12, color: c.textPrimary }}>
+            {Object.entries(data).filter(([k]) => k !== 'event').map(([k, v]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between',
+                borderBottom: `1px solid ${c.borderLight}`, paddingBottom: 4 }}>
+                <span style={{ color: c.textMuted, fontWeight: 600 }}>{k}</span>
+                <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button onClick={load} disabled={busy} className="theme-pill-btn"
+          style={{ background: c.accent, color: 'white', border: 'none', borderRadius: 6,
+            padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer',
+            fontFamily: 'inherit', opacity: busy ? 0.7 : 1 }}>
+          {busy ? 'Refreshing…' : 'Refresh snapshot'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DiskPriorityPanel({ c }) {
+  // Reads the multimedia profile's Tasks \ Priority values (the
+  // same registry values Get-MMAwareness and Auslogics BoostSpeed
+  // display). "Apply recommended" rewrites each to a low-latency
+  // value (requires admin; otherwise an error banner says so).
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [ok, setOk] = useState(null);
+  const load = useCallback(async () => {
+    if (!window.beetleAPI) { setErr('Not available outside the packaged app.'); return; }
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      const { items } = await window.beetleAPI.optimizer.diskPriority();
+      const pri = items.filter(i => i.event === 'priority');
+      setRows(pri);
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  async function apply() {
+    if (!window.beetleAPI) return;
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      const token = await window.beetleAPI.optimizer.requestConfirm('disk-priority-apply');
+      const { items, error } = await window.beetleAPI.optimizer.diskPriorityApply(token);
+      if (error) { setErr(error.reason || 'Failed'); }
+      else { setOk(`Applied to ${items.filter(i => i.event === 'updated').length} profile(s).`); await load(); }
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary }}>Disk Priority Manager</span>
+        <span style={{ background: '#3AA65C', color: 'white', fontSize: 10, fontWeight: 700,
+          padding: '2px 8px', borderRadius: 4 }}>LIVE</span>
+      </div>
+      <div style={{ fontSize: 12, color: c.textSecondary, lineHeight: 1.5, marginBottom: 8, maxWidth: 720 }}>
+        Reads the multimedia system profile's Tasks\Priority values. Apply sets a recommended low-latency variant; admin required to write HKLM.
+      </div>
+      {err && <div style={{ background: c.bgSecondary, border: '1px solid #E0566B', borderRadius: 6,
+        padding: 10, marginBottom: 12, fontSize: 11, color: '#E0566B' }}>{err}</div>}
+      {ok && <div style={{ background: c.bgSecondary, border: '1px solid #3AA65C', borderRadius: 6,
+        padding: 10, marginBottom: 12, fontSize: 11, color: '#3AA65C' }}>{ok}</div>}
+      <div style={{ background: c.bgSecondary, border: `1px solid ${c.border}`, borderRadius: 8, padding: '14px 18px', maxWidth: 720 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: c.textPrimary }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${c.border}`, color: c.textMuted, fontWeight: 600 }}>
+              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Profile</th>
+              <th style={{ textAlign: 'right', padding: '4px 6px' }}>Priority</th>
+              <th style={{ textAlign: 'right', padding: '4px 6px' }}>GPU</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && !busy && (
+              <tr><td colSpan={3} style={{ padding: '6px', color: c.textMuted, fontStyle: 'italic' }}>
+                No Tasks\Priority values were read (this profile may not be installed).
+              </td></tr>
+            )}
+            {rows.map(r => (
+              <tr key={r.profile} style={{ borderBottom: `1px solid ${c.borderLight}` }}>
+                <td style={{ padding: '4px 6px' }}>{r.profile}</td>
+                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>{r.priority}</td>
+                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>{r.gpu}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button onClick={apply} disabled={busy} className="theme-pill-btn"
+          style={{ background: c.accent, color: 'white', border: 'none', borderRadius: 6,
+            padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer',
+            fontFamily: 'inherit', opacity: busy ? 0.7 : 1 }}>
+          {busy ? 'Applying…' : 'Apply recommended (admin)'}
+        </button>
+        <button onClick={load} disabled={busy} className="theme-pill-btn"
+          style={{ background: 'transparent', color: c.textPrimary, border: `1px solid ${c.border}`,
+            borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'inherit' }}>
+          Rescan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DesktopProtectionPanel({ c }) {
+  // Reads the per-user and per-system shell-extension lists (the same
+  // keyboard right-click + file-association handlers); disable/enable are
+  // token-gated. Helps against PUPs that hijack the "Open With" or
+  // "Send to" menus.
+  const [entries, setEntries] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [filter, setFilter] = useState('');
+  const load = useCallback(async () => {
+    if (!window.beetleAPI) { setErr('Not available outside the packaged app.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const { items } = await window.beetleAPI.optimizer.contextMenuList();
+      const list = items.filter(i => i.event === 'item');
+      setEntries(list);
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  async function toggle(entry) {
+    if (!window.beetleAPI) return;
+    setBusy(true); setErr(null);
+    try {
+      const verb = entry.disabled ? 'context-menu-enable' : 'context-menu-disable';
+      const token = await window.beetleAPI.optimizer.requestConfirm(verb);
+      const fn = entry.disabled
+        ? window.beetleAPI.optimizer.contextMenuEnable
+        : window.beetleAPI.optimizer.contextMenuDisable;
+      await fn(entry.id, token);
+      await load();
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  }
+  const shown = entries.filter(e =>
+    !filter.trim() ||
+    String(e.label || '').toLowerCase().includes(filter.toLowerCase()) ||
+    String(e.scope || '').toLowerCase().includes(filter.toLowerCase())
+  );
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: c.textPrimary }}>Desktop Protection</span>
+        <span style={{ background: '#3AA65C', color: 'white', fontSize: 10, fontWeight: 700,
+          padding: '2px 8px', borderRadius: 4 }}>LIVE</span>
+      </div>
+      <div style={{ fontSize: 12, color: c.textSecondary, lineHeight: 1.5, marginBottom: 8, maxWidth: 720 }}>
+        Lists every shell-extension that hooked your file/context menus. Disable / re-enable per-entry - safe to undo.
+      </div>
+      {err && <div style={{ background: c.bgSecondary, border: '1px solid #E0566B', borderRadius: 6,
+        padding: 10, marginBottom: 12, fontSize: 11, color: '#E0566B' }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Filter by label or scope..."
+          style={{ flex: 1, padding: '8px 10px', borderRadius: 6,
+            border: `1px solid ${c.border}`, background: c.bgPrimary,
+            color: c.textPrimary, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}
+        />
+        <button onClick={load} disabled={busy} className="theme-pill-btn"
+          style={{ background: 'transparent', color: c.textPrimary, border: `1px solid ${c.border}`,
+            borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'inherit' }}>
+          {busy ? 'Loading…' : 'Rescan'}
+        </button>
+      </div>
+      <div style={{ maxHeight: 360, overflow: 'auto', border: `1px solid ${c.border}`,
+        borderRadius: 8, background: c.bgSecondary }}>
+        {shown.length === 0 && (
+          <div style={{ padding: 14, fontSize: 12, color: c.textMuted }}>
+            {entries.length === 0
+              ? 'No shell extensions installed - clean system.'
+              : 'No entries match the current filter.'}
+          </div>
+        )}
+        {shown.map(e => (
+          <div key={e.id}
+            style={{ display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px', borderBottom: `1px solid ${c.borderLight}` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: c.textPrimary,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {e.label}
+              </div>
+              <div style={{ fontSize: 10, color: c.textMuted }}>{e.scope}</div>
+            </div>
+            <button onClick={() => toggle(e)} disabled={busy}
+              className="theme-pill-btn"
+              style={{ background: e.disabled ? '#3AA65C' : 'transparent',
+                color: e.disabled ? 'white' : c.textPrimary,
+                border: e.disabled ? 'none' : `1px solid ${c.border}`,
+                borderRadius: 4, padding: '4px 10px', fontSize: 10, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit' }}>
+              {e.disabled ? 'Enable' : 'Disable'}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -590,7 +840,7 @@ export default function OptimizeView({ c, isLight }) {
               </div>
               <div style={{ display: 'flex', gap: 20, padding: '8px 0', borderBottom: `1px solid ${c.borderLight}`, fontSize: 12 }}>
                 <span style={{ flex: 1, color: c.textPrimary, fontWeight: 500 }}>BeetleOptimiser.exe</span>
-                <span style={{ flex: 2, color: c.textSecondary }}>Beetle Optimiser 0.2.0 (this app)</span>
+                <span style={{ flex: 2, color: c.textSecondary }}>Beetle Optimiser 1.0.0 (this app)</span>
               </div>
               <div style={{ display: 'flex', gap: 20, padding: '8px 0', borderBottom: `1px solid ${c.borderLight}`, fontSize: 12 }}>
                 <span style={{ flex: 1, color: c.textPrimary, fontWeight: 500 }}>electron.exe</span>
@@ -657,38 +907,11 @@ export default function OptimizeView({ c, isLight }) {
               {memResult && <div style={{ fontSize: 11, color: c.textMuted, marginTop: 8 }}>{memResult}</div>}
             </>
           ) : monitorTab === 'hardware' ? (
-            <SubTabPlaceholder
-              c={c}
-              title="Hardware Monitoring"
-              items={[
-                'Live CPU temperature (WMI MSAcpi_ThermalZoneTemperature)',
-                'Live GPU temperature (via NVAPI / ADL when supported)',
-                'Fan RPM + power draw for the CPU',
-                'Disk SMART attributes per fixed volume',
-              ]}
-            />
+            <HardwareMonitor c={c} />
           ) : monitorTab === 'diskPriority' ? (
-            <SubTabPlaceholder
-              c={c}
-              title="Disk Priority Manager"
-              items={[
-                'Set per-process I/O priority (very-low → high)',
-                'Throttle background sync clients (OneDrive, Dropbox, etc.)',
-                'Tune NTFS file-system last-access timestamp behavior',
-                'Optional: defer Windows Search indexing while gaming',
-              ]}
-            />
+            <DiskPriorityPanel c={c} />
           ) : monitorTab === 'desktop' ? (
-            <SubTabPlaceholder
-              c={c}
-              title="Desktop Protection"
-              items={[
-                'Restore file associations if a PUP hijacked them',
-                'Reset Chrome / Edge / Firefox default search + home page',
-                'Remove unwanted shell extensions from the context menu',
-                'Show recent suspicious startup entries to disable',
-              ]}
-            />
+            <DesktopProtectionPanel c={c} />
           ) : (
             // monitorTab === 'autoDefrag' - real Toggle + status
             <div>

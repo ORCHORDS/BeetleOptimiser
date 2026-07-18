@@ -499,6 +499,13 @@ ipcMain.handle('chat:ask', async (_, question) => {
   if (typeof question !== 'string' || !question.trim()) {
     throw new Error('chat:ask: question is required');
   }
+  // The local LLM model isn't bundled in the public release (it was
+  // made optional in v1.0 - the Ask a Question tab now relies entirely
+  // on its client-side 51-article RAG corpus). Return a graceful
+  // "use RAG" signal so the renderer falls back to src/lib/ragSearch.js.
+  if (!fs.existsSync(CHAT_MODEL_PATH)) {
+    return { ok: false, reason: 'rag-only', message: 'Local model not bundled; use RAG.' };
+  }
   let session;
   try {
     session = await getChatSession();
@@ -570,6 +577,39 @@ ipcMain.handle('optimizer:request-confirm', (_, action) => {
   return token;
 });
 
+// Input validation helpers for destructive IPC handlers. These keep
+// hand-crafted DevTools calls from being able to slip arbitrary args
+// past the IPC layer into a PowerShell subprocess.
+const DRIVE_LETTER_RE = /^[A-Z]$/;
+// Program-name input regex. Allows Windows app titles + their common
+// punctuation (parens, brackets, ampersand, apostrophes). Excludes
+// every shell-relevant character (`;` `|` `\` `*` `` ` `` `$` `#` `"`)
+// so a hostile DevTools caller can't smuggle `; rm -rf /` past it.
+const PROGRAM_NAME_RE  = /^[A-Za-z0-9._\- +()\[\]&,']+$/;
+const PROGRAM_NAME_MAX = 128;
+const REGISTRY_PATH_RE = /^HK[A-Z]{2}(:\\|\\).{0,260}$/;
+
+function validateDriveLetter(letter) {
+  if (typeof letter !== 'string' || !DRIVE_LETTER_RE.test(letter)) {
+    throw new Error('A drive letter A-Z is required');
+  }
+  return letter + ':';
+}
+
+function validateProgramName(name) {
+  if (typeof name !== 'string' || !PROGRAM_NAME_RE.test(name) || name.length > PROGRAM_NAME_MAX) {
+    throw new Error('Program name contains invalid characters');
+  }
+  return name.trim();
+}
+
+function validateRegistryPath(p) {
+  if (typeof p !== 'string' || !REGISTRY_PATH_RE.test(p)) {
+    throw new Error('Registry path must be a valid HKLM/HKCU/HKCR/HKU path');
+  }
+  return p;
+}
+
 function consumeConfirmation(token, expectedAction) {
   const pending = pendingConfirmations.get(token);
   if (pending) pendingConfirmations.delete(token); // single-use either way
@@ -615,22 +655,25 @@ ipcMain.handle('optimizer:get-sysinfo', () => spawnOptimizer('scripts/optimize-s
 // still requires an elevated process (Repair-Volume itself demands it,
 // independent of our confirm-token gate) - an access-denied result is
 // reported back to the renderer rather than treated as a script bug.
-ipcMain.handle('optimizer:diskdoctor-scan', (_, driveLetter) =>
-  spawnOptimizer('scripts/optimize-diskdoctor.ps1', driveLetter ? [driveLetter] : []));
+ipcMain.handle('optimizer:diskdoctor-scan', (_, driveLetter) => {
+  if (driveLetter != null) validateDriveLetter(driveLetter);
+  spawnOptimizer('scripts/optimize-diskdoctor.ps1', driveLetter ? [driveLetter + ':'] : []);
+});
 ipcMain.handle('optimizer:diskdoctor-repair', (_, driveLetter, token) => {
   consumeConfirmation(token, 'diskdoctor-repair');
-  return spawnOptimizer('scripts/optimize-diskdoctor.ps1', [...(driveLetter ? [driveLetter] : []), '--yes']);
+  if (driveLetter != null) validateDriveLetter(driveLetter);
+  return spawnOptimizer('scripts/optimize-diskdoctor.ps1', [...(driveLetter ? [driveLetter + ':'] : []), '--yes']);
 });
 
 // Service Manager - list / disable / enable, same shape as Startup Manager.
 ipcMain.handle('optimizer:list-services', () => spawnOptimizer('scripts/optimize-services.ps1', ['list']));
 ipcMain.handle('optimizer:disable-service', (_, name, token) => {
   consumeConfirmation(token, 'disable-service');
-  return spawnOptimizer('scripts/optimize-services.ps1', ['disable', '--name', name, '--yes']);
+  return spawnOptimizer('scripts/optimize-services.ps1', ['disable', '--name', validateProgramName(name), '--yes']);
 });
 ipcMain.handle('optimizer:enable-service', (_, name, token) => {
   consumeConfirmation(token, 'enable-service');
-  return spawnOptimizer('scripts/optimize-services.ps1', ['enable', '--name', name, '--yes']);
+  return spawnOptimizer('scripts/optimize-services.ps1', ['enable', '--name', validateProgramName(name), '--yes']);
 });
 
 // Task Scheduler manager - list / disable / enable, same shape as Service
@@ -639,22 +682,28 @@ ipcMain.handle('optimizer:enable-service', (_, name, token) => {
 ipcMain.handle('optimizer:list-scheduled-tasks', () => spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['list']));
 ipcMain.handle('optimizer:disable-scheduled-task', (_, taskPath, taskName, token) => {
   consumeConfirmation(token, 'disable-scheduled-task');
-  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['disable', '--path', taskPath, '--name', taskName, '--yes']);
+  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1',
+    ['disable', '--path', validateProgramName(taskPath), '--name', validateProgramName(taskName), '--yes']);
 });
 ipcMain.handle('optimizer:enable-scheduled-task', (_, taskPath, taskName, token) => {
   consumeConfirmation(token, 'enable-scheduled-task');
-  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['enable', '--path', taskPath, '--name', taskName, '--yes']);
+  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1',
+    ['enable', '--path', validateProgramName(taskPath), '--name', validateProgramName(taskName), '--yes']);
 });
 ipcMain.handle('optimizer:create-scheduled-task', (_, name, trigger, command, args, token) => {
   consumeConfirmation(token, 'create-scheduled-task');
-  const argv = ['create', '--taskname', name, '--trigger', trigger, '--command', command];
-  if (args) argv.push('--cargs', args);
+  const cleanName = validateProgramName(name);
+  const cleanCommand = validateProgramName(command);
+  const cleanTrigger = typeof trigger === 'string' && trigger.length > 0 && trigger.length < 32 ? trigger : 'daily';
+  const argv = ['create', '--taskname', cleanName, '--trigger', cleanTrigger, '--command', cleanCommand];
+  if (args) argv.push('--cargs', String(args).slice(0, 1024));
   argv.push('--yes');
   return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', argv);
 });
 ipcMain.handle('optimizer:delete-scheduled-task', (_, taskPath, taskName, token) => {
   consumeConfirmation(token, 'delete-scheduled-task');
-  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1', ['delete', '--path', taskPath, '--name', taskName, '--yes']);
+  return spawnOptimizer('scripts/optimize-scheduled-tasks.ps1',
+    ['delete', '--path', validateProgramName(taskPath), '--name', validateProgramName(taskName), '--yes']);
 });
 
 // Tweak Manager - real reversible tweaks behind MaintainView's Performance /
@@ -662,11 +711,15 @@ ipcMain.handle('optimizer:delete-scheduled-task', (_, taskPath, taskName, token)
 ipcMain.handle('optimizer:tweaks-status', () => spawnOptimizer('scripts/optimize-tweaks.ps1', ['status']));
 ipcMain.handle('optimizer:tweaks-apply', (_, id, token) => {
   consumeConfirmation(token, 'tweaks-apply');
-  return spawnOptimizer('scripts/optimize-tweaks.ps1', ['apply', '--id', id, '--yes']);
+  return spawnOptimizer('scripts/optimize-tweaks.ps1', ['apply', '--id', validateProgramName(id), '--yes']);
 });
 ipcMain.handle('optimizer:tweaks-revert', (_, id, token) => {
   consumeConfirmation(token, 'tweaks-revert');
-  return spawnOptimizer('scripts/optimize-tweaks.ps1', ['revert', '--id', id, '--yes']);
+  return spawnOptimizer('scripts/optimize-tweaks.ps1', ['revert', '--id', validateProgramName(id), '--yes']);
+});
+ipcMain.handle('optimizer:tweaks-revert-all', (_, token) => {
+  consumeConfirmation(token, 'tweaks-revert-all');
+  return spawnOptimizer('scripts/optimize-tweaks.ps1', ['revert-all', '--yes']);
 });
 
 // Driver check - read-only (installing a driver needs the vendor's own
@@ -725,6 +778,17 @@ ipcMain.handle('optimizer:clean-junk', (_, token) => {
   return spawnOptimizer('scripts/optimize-clean-execute.ps1', ['--yes']);
 });
 
+// App-uninstall - destructive (runs the app's own uninstaller). The
+// productId is a registry GUID string, validate it before passing through.
+ipcMain.handle('optimizer:uninstall-program', () =>
+  spawnOptimizer('scripts/optimize-uninstall.ps1', ['list'])
+);
+ipcMain.handle('optimizer:uninstall-program-do', (_, productId, token) => {
+  consumeConfirmation(token, 'uninstall-program-do');
+  return spawnOptimizer('scripts/optimize-uninstall.ps1',
+    ['do', validateProgramName(productId), '--yes']);
+});
+
 // Empty Folder Cleaner - scan only (user profile folders, dev-artifact dirs
 // like node_modules/.git pruned from the walk - see the script's own header).
 ipcMain.handle('optimizer:scan-empty-folders', () => spawnOptimizer('scripts/optimize-empty-folders.ps1', []));
@@ -740,17 +804,17 @@ ipcMain.handle('optimizer:win10-list', () => spawnOptimizer('scripts/optimize-wi
 ipcMain.handle('optimizer:wiper-list', () => spawnOptimizer('scripts/optimize-wiper.ps1', ['list']));
 ipcMain.handle('optimizer:wiper-wipe', (_, driveLetter, token) => {
   consumeConfirmation(token, 'wiper-wipe');
-  return spawnOptimizer('scripts/optimize-wiper.ps1', ['wipe', driveLetter, '--yes']);
+  return spawnOptimizer('scripts/optimize-wiper.ps1', ['wipe', validateDriveLetter(driveLetter) + ':', '--yes']);
 });
 ipcMain.handle('optimizer:slimmer-list', () => spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['list']));
 ipcMain.handle('optimizer:slimmer-apply', (_, op, token) => {
   consumeConfirmation(token, 'slimmer-apply');
-  return spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['apply', '--op', op, '--yes']);
+  return spawnOptimizer('scripts/optimize-windows-slimmer.ps1', ['apply', '--op', validateProgramName(op), '--yes']);
 });
 ipcMain.handle('optimizer:mode-list', () => spawnOptimizer('scripts/optimize-mode-switcher.ps1', ['list']));
 ipcMain.handle('optimizer:mode-set', (_, schemeId, token) => {
   consumeConfirmation(token, 'mode-set');
-  return spawnOptimizer('scripts/optimize-mode-switcher.ps1', ['set', '--scheme', schemeId, '--yes']);
+  return spawnOptimizer('scripts/optimize-mode-switcher.ps1', ['set', '--scheme', validateProgramName(schemeId), '--yes']);
 });
 ipcMain.handle('optimizer:context-menu-list', () => spawnOptimizer('scripts/optimize-context-menu.ps1', ['list']));
 ipcMain.handle('optimizer:context-menu-disable', (_, id, token) => {
@@ -852,13 +916,9 @@ ipcMain.handle('optimizer:defrag-drive', (_, mode = 'analyze', token) => {
 // Apps - list installed programs (read-only) or uninstall a specific one.
 // Renderer takes the list result, shows it as a table; user clicks X next to
 // an entry, ConfirmModal is accepted, THEN main.js invokes (do) with --yes.
-ipcMain.handle('optimizer:uninstall-program', () =>
-  spawnOptimizer('scripts/optimize-uninstall.ps1', ['list'])
-);
-ipcMain.handle('optimizer:uninstall-program-do', (_, productId, token) => {
-  consumeConfirmation(token, 'uninstall-program-do');
-  return spawnOptimizer('scripts/optimize-uninstall.ps1', ['do', productId, '--yes']);
-});
+// (uninstall-program + uninstall-program-do handlers live above — they are
+// colocated with the main clean-up IPC handlers so it's clear they share
+// the same validation + token pattern.)
 
 // Startup - list / disable / enable. Disable and enable mutate state and
 // require a confirmation token. Renderer should show the list, toggle the
