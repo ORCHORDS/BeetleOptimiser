@@ -9,7 +9,8 @@
     "start": "npm run build && electron .",
     "test": "node --test tests/*.test.js",
     "test:watch": "node --test --watch tests/*.test.js",
-    "package": "npm run build && electron-builder --win portable"
+    "package": "npm run build && electron-builder --win portable",
+    "package:all": "npm run build && electron-builder --win portable nsis"
   },
   "keywords": [
     "windows",
@@ -25,25 +26,26 @@
   ],
   "homepage": "https://github.com/ORCHORDS/BeetleOptimiser",
   "bugs": "https://github.com/ORCHORDS/BeetleOptimiser/issues",
-  "author": "ORCHIDS.COM <crm@orchords.com>",
+  "author": "ORCHORDS.COM <crm@orchords.com>",
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
   },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "vite": "^6.0.7"
-  },
   "dependencies": {
-    "@phosphor-icons/react": "^2.1.10",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@phosphor-icons/react": "2.1.10",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "vite": "6.0.7"
   },
   "build": {
     "appId": "com.orchords.beetleoptimiser",
     "productName": "BeetleOptimiser",
+    "copyright": "Copyright (c) 2026 ORCHORDS.COM",
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -52,8 +54,26 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Beetle Optimiser",
+      "installerHeaderIcon": "build/icon.ico",
+      "uninstallDisplayName": "Beetle Optimiser",
+      "deleteAppDataOnUninstall": false,
+      "license": "LICENSE"
     },
     "files": [
       "main.js",
