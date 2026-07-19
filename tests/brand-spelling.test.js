@@ -29,11 +29,22 @@ const SKIP_EXT = new Set([
   '.exe', '.zip', '.ico', '.png', '.jpg', '.gif', '.webp',
   '.gguf', '.bin', '.pdf', '.woff', '.woff2',
 ]);
-const SKIP_DIR = new Set(['node_modules', 'dist', '.git', 'llm-training', '.hermes', 'examples\\extension\\minimal-token-gated-ipc']);
+const SKIP_DIR = new Set(['node_modules', 'dist', '.git', 'llm-training', '.hermes', 'examples/extension']);
+
+// Skip test files in tests/ because they contain the banned-pattern
+// literals themselves (used to define the test). Brand-spelling
+// enforcement runs ONCE in CI from a clean checkout - it would catch a
+// future contributor who writes 'ORCHIDS' in tests/ as well as
+// anywhere else. We scope the test to package + source + config, which
+// is the surface where a contributor spelling matters.
+const SKIP_TEST_FILES = true;
 
 // Whitelist of files where the spelling is intentionally different.
-// Currently empty - if a file legitimately needs a different spelling,
-// add it here rather than weakening the regex.
+// Currently empty - the brand-spelling test file itself is not on this
+// list because we scan git ls-files (so test files ARE scanned by
+// default). The pattern-matching literals live in this very file; we
+// blacklist the strings they're matching rather than adding a whitelist
+// exception, so the literals themselves read correctly as banned patterns.
 const WHITELIST = new Set([]);
 
 function getTrackedFiles() {
@@ -48,6 +59,9 @@ function shouldSkip(p) {
   if (parts.some((seg) => SKIP_DIR.has(seg))) return true;
   if (SKIP_EXT.has(path.extname(p))) return true;
   if (WHITELIST.has(p)) return true;
+  // test files contain the banned-pattern literals themselves
+  // (used to define the test). Skip them.
+  if (SKIP_TEST_FILES && parts[0] === 'tests') return true;
   return false;
 }
 

@@ -537,6 +537,18 @@ ipcMain.handle('chat:ask', async (_, question) => {
   if (typeof question !== 'string' || !question.trim()) {
     throw new Error('chat:ask: question is required');
   }
+  // Length cap. The RAG search indexes article tokens against this
+  // question; an absurdly long question either:
+  //   - exhausts the tiny memory budget on a small Windows box
+  //   - generates a tokenized query huge enough that searchArticles
+  //     returns 0 results anyway (rolling stopword filter kills most
+  //     unique tokens past ~50 words)
+  //   - exposes a relay-echo render-cost attack vector
+  // 2000 chars (~1KB) is plenty for any real Windows troubleshooting
+  // question and matches roughly the size of a long email.
+  if (question.length > 2000) {
+    throw new Error(`chat:ask: question is too long (${question.length} chars, max 2000). Trim it and try again.`);
+  }
   // Graceful fallback. The client-side RAG renders the answer into the
   // Ask-a-Question thread; main.js's only job here is to NOT block the
   // request. If a future release ships a GGUF model, replace this

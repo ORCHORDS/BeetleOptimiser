@@ -835,3 +835,76 @@ test('telemetry: respawn is skipped when the user is quitting', () => {
   assert.equal(timerCount, 1, `expected exactly one respawn attempt, got ${timerCount}`);
   assert.equal(spawns, 0, 'startNext should never have been called directly here');
 });
+
+
+// ====================== chat:ask length cap ==============================
+
+// Mirror of the chat:ask IPC handler (sans the local-LLM dependencies).
+// Enforces:
+//   - non-string / empty -> reject
+//   - length > 2000 -> reject (DoS / render-cost guard)
+//   - everything else -> return { ok: false, reason: 'rag-only' }
+//     (the LLM model isn't bundled in v1.0)
+
+const CHAT_MAX_LEN = 2000;
+
+function chatAskGuard(question) {
+  if (typeof question !== 'string' || !question.trim()) {
+    throw new Error('chat:ask: question is required');
+  }
+  if (question.length > CHAT_MAX_LEN) {
+    throw new Error(`chat:ask: question is too long (${question.length} chars, max ${CHAT_MAX_LEN}). Trim it and try again.`);
+  }
+  return true;
+}
+
+test('chat:ask: accepts a typical Windows troubleshooting question', () => {
+  // Mirror of the prod default: short, no leading/trailing space.
+  assert.doesNotThrow(() => chatAskGuard('Why is my PC slow to start up?'));
+});
+
+test('chat:ask: accepts a long but under-cap question', () => {
+  const longButOk = 'disk ' + ' '.repeat(1500) + ' cleanup';
+  // Spaces are part of the length; this string is 1509 chars -> under cap
+  assert.doesNotThrow(() => chatAskGuard(longButOk));
+});
+
+test('chat:ask: rejects a question that exceeds the 2000-char cap', () => {
+  const tooLong = 'a'.repeat(2001);
+  assert.throws(
+    () => chatAskGuard(tooLong),
+    /chat:ask: question is too long \(2001 chars, max 2000\)/,
+  );
+});
+
+test('chat:ask: accepts exactly 2000 chars (boundary)', () => {
+  const atCap = 'a'.repeat(2000);
+  assert.doesNotThrow(() => chatAskGuard(atCap));
+});
+
+test('chat:ask: rejects empty string', () => {
+  assert.throws(() => chatAskGuard(''), /question is required/);
+});
+
+test('chat:ask: rejects whitespace-only string', () => {
+  assert.throws(() => chatAskGuard('   \t\n  '), /question is required/);
+});
+
+test('chat:ask: rejects non-string input', () => {
+  assert.throws(() => chatAskGuard(null), /question is required/);
+  assert.throws(() => chatAskGuard(undefined), /question is required/);
+  assert.throws(() => chatAskGuard(12345), /question is required/);
+  assert.throws(() => chatAskGuard({}), /question is required/);
+  assert.throws(() => chatAskGuard([]), /question is required/);
+});
+
+test('chat:ask: error message includes both the actual and limit length', () => {
+  // The renderer uses .message to surface a useful error to the user.
+  // The error must include both the actual offending length + the
+  // documented cap so the user knows how much to trim.
+  let caught;
+  try { chatAskGuard('b'.repeat(5000)); }
+  catch (e) { caught = e; }
+  assert.match(caught.message, /5000/);
+  assert.match(caught.message, /2000/);
+});
