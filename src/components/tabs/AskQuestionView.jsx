@@ -193,12 +193,34 @@ export default function AskQuestionView({ c, isLight }) {
   async function sendMessage(text) {
     const trimmed = text.trim();
     if (!trimmed || thinking) return;
+    // Pre-flight client-side cap (mirror of the server-side 2000-char cap).
+    // Strictly redundant - the server-side handler also enforces this and
+    // throws - but failing fast here avoids a round-trip on a too-long
+    // paste. The 1900 lets the user include a tiny bit of grow room before
+    // the underlying 2000 cap fires.
+    if (trimmed.length > 1900) {
+      setMessages((m) => [...m,
+        { role: 'user', text: trimmed },
+        { role: 'assistant', text: `Question is too long (${trimmed.length} chars, max 1900). Try breaking it into a shorter question.` },
+      ]);
+      setDraft('');
+      return;
+    }
     setMessages((m) => [...m, { role: 'user', text: trimmed }]);
     setDraft('');
     setThinking(true);
     try {
       const reply = await getAssistantReply(trimmed);
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+    } catch (err) {
+      // Surface IPC errors as an assistant message rather than letting
+      // the rejected promise bubble up as an unhandled-rejection in the
+      // console. The user gets a clear explanation instead of a silent
+      // hang.
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        text: `Sorry, I couldn't process that. ${err?.message || err}`,
+      }]);
     } finally {
       setThinking(false);
     }
@@ -385,6 +407,7 @@ export default function AskQuestionView({ c, isLight }) {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              maxLength={1900}
               placeholder="e.g. why is my PC slow to start up?"
               style={{
                 flex: 1, padding: '9px 12px', borderRadius: 6,
