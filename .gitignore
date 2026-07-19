@@ -7,8 +7,12 @@ pnpm-debug.log*
 
 # Build output
 dist/
-build/
 out/
+
+# Build assets are tracked (electron-builder reads build/icon.ico + build/icon.png),
+# so don't ignore the whole build/ directory - just the per-machine
+# intermediates like debug logs that may appear here.
+# 'build/' is intentionally NOT in this list.
 
 # Electron
 *.log
@@ -22,6 +26,10 @@ Thumbs.db
 *.swo
 *.local
 
+# Anthropic's Claude dev workspace (per-machine, NOT for the public repo).
+# The .claude/launch.json was accidentally tracked early on; untracked below.
+.claude/
+
 # Editor scratch
 *.tmp
 *.bak
@@ -32,8 +40,11 @@ Thumbs.db
 # Microsoft docs + the app's own RAG articles to fine-tune a local LLM).
 llm-training/
 
-# Local env file that PowerShell may use
-.env
+# Local env files that PowerShell / scripts / CI secrets may use.
+# Catch-all .env* with an exception for the example-template file (it's
+# safe to commit .env.example as documentation of which keys exist).
+.env*
+!.env.example
 
 # Local LLM model weights
 models/

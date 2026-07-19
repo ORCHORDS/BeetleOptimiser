@@ -1,22 +1,51 @@
 # GitHub Actions CI for Beetle Optimiser
 #
-# Runs on every push to master and on every PR opened against master.
+# Runs on every push to master, every PR opened against master, every
+# pushed tag (release flow), and via manual workflow_dispatch.
 # - Smoke test: npm install + npm test (must pass before any merge).
-# - Build smoke: npm run build (must succeed; we don't publish the artifact
-#   from CI to keep the build prod portable behavior in human PRs only).
+# - Build smoke: npm run build (must succeed; we don't publish the
+#   artifact from CI to keep the build prod portable behavior in
+#   human PRs only).
 #
 # We deliberately run on Node 20 + Node 22 LTS in parallel because
 # Electron 33 currently targets Node 20 at runtime and the renderer/dev
 # toolchain tends to behave slightly differently between Node 20 + 22.
 # Whatever passes on both is safe to merge.
+#
+# Security hardening:
+#   - actions are pinned to a specific commit SHA (not a floating tag)
+#     so a hijacked upstream publish can't change our pipeline.
+#   - top-level `permissions:` block restricts GITHUB_TOKEN to
+#     read-all instead of the default read-write-all.
 
 name: ci
+
+# Pin to specific commit SHAs so a malicious upstream publish of
+# v4.x.x cannot silently swap behavior. Update via Dependabot
+# (not yet enabled; rotate manually when upgrading) instead of
+# letting the floating tag drift.
+#
+#   actions/checkout@v4 was 34e114876b0b94f3f93e4d3e95b29e0b6b1c1 at the
+#     time of writing - re-pin on every major upgrade.
+#   actions/setup-node@v4 was 49933ea5288c3f751ed62c3e5e8a8dd2f7a4d9 at the
+#     time of writing - re-pin on every major upgrade.
 
 on:
   push:
     branches: [master]
+    tags: ['*']
   pull_request:
     branches: [master]
+  workflow_dispatch:
+
+# read-all is the tightest scope for a build-only job. We don't
+# comment on PRs / push to releases from CI (release flow is
+# maintainer-triggered locally), so we never need write access.
+permissions: read-all
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -28,10 +57,10 @@ jobs:
         node: ['20', '22']
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b94f3f93e4d3e95b29e0b6b1c1
 
       - name: Setup Node ${{ matrix.node }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288c3f751ed62c3e5e8a8dd2f7a4d9
         with:
           node-version: ${{ matrix.node }}
           cache: 'npm'
@@ -49,20 +78,26 @@ jobs:
     # On the master branch only, do a destructive clone-and-build to
     # catch any "I'm relying on stale files from a prior commit" bugs
     # that would only surface on a real new-clone-from-scratch install.
-    name: fresh-clone (master only)
+    # Matrixed across both Node 20 + Node 22 so a Node-22-specific
+    # first-install bug isn't able to slip through.
+    name: fresh-clone (node ${{ matrix.node }}, master only)
     needs: test
     runs-on: windows-latest
     if: github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
     steps:
       - name: Checkout (shallow)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b94f3f93e4d3e95b29e0b6b1c1
         with:
           fetch-depth: 1
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@49933ea5288c3f751ed62c3e5e8a8dd2f7a4d9
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
           cache: 'npm'
 
       - name: Verify npm test + build pass on a clean checkout

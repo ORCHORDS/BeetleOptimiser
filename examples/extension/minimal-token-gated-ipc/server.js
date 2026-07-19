@@ -3,9 +3,9 @@
 // This is a *standalone* example that takes the same IPC contract
 // Beetle Optimiser uses for destructive handlers (requestConfirm + a
 // single-use 30-second token) and shows what a custom Electron app
-// would do with it. It uses Node's built-in `node:net` for an
-// in-process IPC bridge - no Electron required - so you can run it
-// from plain `node examples/extension/minimal-token-gated-ipc/server.js`.
+// would do with it. The demo is in-process: no socket, no port, just
+// pure-JS state on a Map. Real Electron code wires this to IPC with
+// ipcMain.handle() in main.js; this file is the contract in isolation.
 //
 // The contract is intentionally tiny:
 //   - "mint" returns a fresh UUID token + records { action, expires }

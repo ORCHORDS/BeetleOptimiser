@@ -4,3 +4,9 @@ contact_links:
     url: https://github.com/ORCHORDS/BeetleOptimiser
   - name: Documentation
     url: https://github.com/ORCHORDS/BeetleOptimiser/blob/master/README.md
+  - name: Security Policy
+    # Security disclosures should NOT use a public issue - file them
+    # via GitHub's private vulnerability reporting flow (Settings ->
+    # Code security and analysis -> Private vulnerability reporting)
+    # or by email to crm@orchords.com per SECURITY.md.
+    url: https://github.com/ORCHORDS/BeetleOptimiser/security/policy

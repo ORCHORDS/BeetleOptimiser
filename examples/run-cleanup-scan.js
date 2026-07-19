@@ -20,6 +20,16 @@ const proc = spawn(
   { stdio: ['ignore', 'pipe', 'pipe'] }
 );
 
+// If PowerShell is missing from PATH (uncommon but possible in
+// minimal Windows containers), Node emits 'ENOENT' via the 'error'
+// event. Without this listener the process exits with a non-zero
+// exit code and no message. Surface the failure the same way
+// main.js's spawnOptimizer wrapper does.
+proc.on('error', (err) => {
+  console.error(`failed to spawn powershell: ${err.message}`);
+  process.exit(127);
+});
+
 const results = [];
 let buf = '';
 proc.stdout.on('data', (chunk) => {
@@ -31,11 +41,21 @@ proc.stdout.on('data', (chunk) => {
     if (!line) continue;
     try {
       const obj = JSON.parse(line);
-      // Category rows have an `id` + `files`/`bytes` shape; the renderer
-      // knows them as scan results and displays them as cards. Items that
-      // don't have those fields (e.g. an explicit `{"event":"finished"}`)
-      // are dropped because they don't carry survey data.
-      if (obj && typeof obj.id === 'string' && typeof obj.files !== 'undefined') {
+      // optimize-cleanup.ps1 writes exactly one line per category with
+      // the shape { id, label, path, files, bytes, safe }. Lines that
+      // don't match the contract are dropped. The renderer talks to
+      // the same script via main.js's spawnOptimizer wrapper; if this
+      // run later swaps to optimize-clean-execute.ps1 (which DOES
+      // emit an envelope shape: { event: 'started' / 'category' /
+      // 'finished' }), drop those rows explicitly via obj.event.
+      if (
+        obj &&
+        typeof obj.id === 'string' &&
+        typeof obj.label === 'string' &&
+        typeof obj.files === 'number' &&
+        typeof obj.bytes === 'number' &&
+        obj.event === undefined
+      ) {
         results.push(obj);
       }
     } catch (_) { /* skip malformed line */ }

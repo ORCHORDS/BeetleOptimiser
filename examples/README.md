@@ -18,7 +18,7 @@ destructive examples (`--yes`) need an elevated process.
 
 ## Example 1: scan-only cleanup survey
 
-Lists every junk category the Beeltle clean-up engine knows about —
+Lists every junk category the Beetle clean-up engine knows about —
 file counts, byte totals, the path on disk. Read-only, safe to run on
 any user.
 
@@ -40,8 +40,14 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 {"id":"windows-update","label":"Windows Update downloads","path":"C:\\Windows\\SoftwareDistribution\\Download","files":566,"bytes":1140551400,"safe":true}
 {"id":"wer","label":"Windows Error Reports","path":"C:\\Users\\YOU\\AppData\\Local\\Microsoft\\Windows\\WER","files":0,"bytes":0,"safe":true}
 {"id":"edge-cache","label":"Microsoft Edge cache","path":"C:\\Users\\YOU\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Cache","files":162,"bytes":18983611,"safe":true}
-{"event":"finished","mode":"list"}
 ```
+
+The scan script writes exactly one NDJSON line per category above and
+exits; there is no `started` / `finished` envelope here. That envelope
+shape (also one-line NDJSON, but with `event: 'started' / 'category'
+/ 'finished'`) is what `optimize-clean-execute.ps1` emits for the
+real deletion pass. If you re-point this example at the cleanup
+script, expect three extra envelope lines.
 
 Each `bytes` value is a raw integer count from the corresponding folder.
 Multiply by `9.31e-10` for an approximate GB.
