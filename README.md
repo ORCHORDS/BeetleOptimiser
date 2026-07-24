@@ -206,3 +206,18 @@ the tests in the same commit.
 ## License
 
 [MIT © ORCHORDS.COM](./LICENSE)
+## Support Beetle
+
+If Beetle saved you a Saturday of registry spelunking, a tip goes a long way.
+
+| | | |
+|---|---|---|
+| **Solana** | `DxQRGWyCF9hqvrJExSxiaac1ZFf8NiUmpRcZFPRU4xaq` | scan with Phantom / Backpack / Solflare |
+| **Ethereum** | `0x9aE64EFEf05E0ac980843FE3c7C03D9C0C8D1BC3` | scan with MetaMask / Rabby / Frame |
+| **Bitcoin** | `bc1qp3pran7r2tw2s6x95p3lfr8zw34u74tpxttu3r` | on-chain, any BTC wallet |
+
+![Solana tip QR](./assets/qr-sol.png) ![Ethereum tip QR](./assets/qr-eth.png) ![Bitcoin tip QR](./assets/qr-btc.png)
+
+One-time, no signup, no platform in the middle.
+
+> **Privacy note:** on-chain tips are publicly traceable. If you want to keep your reading history private from your tip, use a fresh wallet funded through a swap, not your main one.
